@@ -18,53 +18,9 @@
 #include <stdlib.h>
 #include <assert.h>
 #include "dhara/journal.h"
-#include "dhara/bytes.h"
 #include "sim.h"
 #include "util.h"
-
-static void seq_enqueue(struct Dhara_Journal *j, int i)
-{
-	const int page_size = 1 << j->nand->log2_page_size;
-	uint8_t r[page_size];
-	uint8_t meta[DHARA_META_SIZE];
-	Dhara_error_t err;
-
-	seq_gen(i, r, page_size);
-	Dhara_w32(meta, i);
-
-	if (Dhara_Journal_enqueue(j, r, meta, &err) < 0)
-		dabort("enqueue", err);
-
-	if (Dhara_Journal_read_meta(j, Dhara_Journal_root(j), meta, &err) < 0)
-		dabort("read_meta", err);
-
-	assert(Dhara_r32(meta) == i);
-}
-
-static void seq_dequeue(struct Dhara_Journal *j, int expect)
-{
-	const int page_size = 1 << j->nand->log2_page_size;
-	uint8_t r[page_size];
-	uint8_t meta[DHARA_META_SIZE];
-	const Dhara_page_t tail = Dhara_Journal_tail(j);
-	int seed;
-	Dhara_error_t err;
-
-	if (Dhara_Journal_read_meta(j, tail, meta, &err) < 0)
-		dabort("read_meta", err);
-
-	seed = Dhara_r32(meta);
-	assert((expect < 0) || (expect == seed));
-
-	if (Dhara_NAND_read(j->nand, tail, 0, page_size, r,
-			    &err) < 0)
-		dabort("NAND_read", err);
-
-	seq_assert(seed, r, page_size);
-
-	if (Dhara_Journal_dequeue(j, &err) < 0)
-		dabort("dequeue", err);
-}
+#include "jtutil.h"
 
 static void suspend_resume(struct Dhara_Journal *j)
 {
@@ -102,6 +58,7 @@ int main(void)
 	int i;
 	int rep;
 
+	sim_reset();
 	sim_inject_bad(20);
 
 	printf("Journal init\n");
@@ -112,10 +69,10 @@ int main(void)
 	printf("Enqueue/dequeue, 100 pages x20\n");
 	for (rep = 0; rep < 20; rep++) {
 		for (i = 0; i < 100; i++)
-			seq_enqueue(&journal, i);
+			jt_enqueue(&journal, i);
 		printf("    size     = %d -> ", Dhara_Journal_size(&journal));
 		for (i = 0; i < 100; i++)
-			seq_dequeue(&journal, i);
+			jt_dequeue(&journal, i);
 		printf("%d\n", Dhara_Journal_size(&journal));
 	}
 	printf("\n");
@@ -129,16 +86,16 @@ int main(void)
 		int j;
 
 		for (i = 0; i < 100; i++)
-			seq_enqueue(&journal, i);
+			jt_enqueue(&journal, i);
 
 		while (!Dhara_Journal_is_checkpointed(&journal))
-			seq_enqueue(&journal, i++);
+			jt_enqueue(&journal, i++);
 
 		printf("    size     = %d -> ", Dhara_Journal_size(&journal));
 		suspend_resume(&journal);
 
 		for (j = 0; j < i; j++)
-			seq_dequeue(&journal, j);
+			jt_dequeue(&journal, j);
 		printf("%d\n", Dhara_Journal_size(&journal));
 	}
 	printf("\n");

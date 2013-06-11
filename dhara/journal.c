@@ -369,7 +369,7 @@ int Dhara_Journal_read_meta(struct Dhara_Journal *j, Dhara_page_t p,
 	 */
 	if ((j->recover_meta != DHARA_PAGE_NONE) &&
 	    align_eq(p, j->recover_root, j->log2_ppc))
-		return Dhara_NAND_read(j->nand, j->recover_root,
+		return Dhara_NAND_read(j->nand, j->recover_meta,
 				       offset, DHARA_META_SIZE,
 				       buf, err);
 
@@ -480,6 +480,26 @@ static int dump_meta(struct Dhara_Journal *j, Dhara_error_t *err)
 	return -1;
 }
 
+static void recover_tail_fixup(struct Dhara_Journal *j, Dhara_page_t bad_page)
+{
+	Dhara_block_t blk = j->tail >> j->nand->log2_ppb;
+	int i;
+
+	if (!align_eq(j->tail, bad_page, j->nand->log2_ppb))
+		return;
+
+	for (i = 0; i < DHARA_MAX_RETRIES; i++) {
+		blk++;
+		if (blk >= j->nand->num_blocks)
+			blk = 0;
+
+		if (!Dhara_NAND_is_bad(j->nand, blk)) {
+			j->tail = blk << j->nand->log2_ppb;
+			break;
+		}
+	}
+}
+
 static int recover_from(struct Dhara_Journal *j,
 			Dhara_error_t write_err,
 			Dhara_error_t *err)
@@ -505,19 +525,20 @@ static int recover_from(struct Dhara_Journal *j,
 	/* Were we block aligned? No recovery required! */
 	if (is_aligned(old_head, j->nand->log2_ppb)) {
 		Dhara_NAND_mark_bad(j->nand, old_head >> j->nand->log2_ppb);
+		recover_tail_fixup(j, old_head);
 		return 0;
 	}
 
 	j->recover_root = j->root;
-	j->recover_start = j->head;
 	j->recover_next =
 		j->recover_root & ~((1 << j->nand->log2_ppb) - 1);
 
 	/* Are we holding buffered metadata? Dump it first. */
-	if (!is_aligned(j->head, j->log2_ppc) &&
+	if (!is_aligned(old_head, j->log2_ppc) &&
 	    dump_meta(j, err) < 0)
 		return -1;
 
+	j->recover_start = j->head;
 	Dhara_set_error(err, DHARA_E_RECOVER);
 	return -1;
 }
@@ -525,6 +546,7 @@ static int recover_from(struct Dhara_Journal *j,
 static int push_meta(struct Dhara_Journal *j, const uint8_t *meta,
 		     Dhara_error_t *err)
 {
+	const Dhara_page_t old_head = j->head;
 	Dhara_error_t my_err;
 	const size_t offset =
 		(j->head & ((1 << j->log2_ppc) - 1)) * DHARA_META_SIZE +
@@ -533,14 +555,15 @@ static int push_meta(struct Dhara_Journal *j, const uint8_t *meta,
 	/* We've just written a user page. Add the metadata to the
 	 * buffer.
 	 */
-	j->root = j->head;
 	j->head++;
 
 	memcpy(j->page_buf + offset, meta, DHARA_META_SIZE);
 
 	/* Unless we've filled the buffer, don't do any IO */
-	if (!is_aligned(j->head + 1, j->log2_ppc))
+	if (!is_aligned(j->head + 1, j->log2_ppc)) {
+		j->root = old_head;
 		return 0;
+	}
 
 	/* We don't need to check for immediate recover, because that'll
 	 * never happen -- we're not block-aligned.
@@ -565,6 +588,7 @@ static int push_meta(struct Dhara_Journal *j, const uint8_t *meta,
 		j->head++;
 	}
 
+	j->root = old_head;
 	return 0;
 }
 
@@ -648,6 +672,8 @@ void Dhara_Journal_ack_recoverable(struct Dhara_Journal *j)
 			Dhara_NAND_mark_bad(j->nand,
 				j->recover_meta >> j->nand->log2_ppb);
 
+		/* Was the tail on this page? Skip it forward */
+		recover_tail_fixup(j, j->recover_root);
 		clear_recovery(j);
 	} else {
 		/* Skip to next user page */

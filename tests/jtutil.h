@@ -14,33 +14,13 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef TESTS_SIM_H_
-#define TESTS_SIM_H_
+#ifndef TESTS_JTUTIL_H_
+#define TESTS_JTUTIL_H_
 
-#include "dhara/nand.h"
+#include "dhara/journal.h"
 
-/* Simulated NAND layer. This layer reads and writes to an in-memory
- * buffer.
- */
-extern const struct Dhara_NAND sim_nand;
-
-/* Reset to start-up defaults */
-void sim_reset(void);
-
-/* Dump statistics and status */
-void sim_dump(void);
-
-/* Set faults on individual blocks */
-void sim_set_failed(Dhara_block_t blk);
-void sim_set_timebomb(Dhara_block_t blk, int ttl);
-
-/* Create some factory-marked bad blocks */
-void sim_inject_bad(int count);
-
-/* Create some unmarked bad blocks */
-void sim_inject_failed(int count);
-
-/* Create a timebomb on the given block */
-void sim_inject_timebombs(int count, int max_ttl);
+/* Enqueue/dequeue seed/sequence pairs */
+void jt_enqueue(struct Dhara_Journal *j, int i);
+uint32_t jt_dequeue(struct Dhara_Journal *j, int expect);
 
 #endif

@@ -21,6 +21,7 @@ int main(void)
 {
 	int i;
 
+	sim_reset();
 	sim_inject_bad(5);
 
 	for (i = 0; i < (1 << sim_nand.log2_ppb); i++) {

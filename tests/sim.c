@@ -73,6 +73,13 @@ static struct sim_stats stats;
 static struct block_status blocks[NUM_BLOCKS];
 static uint8_t pages[MEM_SIZE];
 
+void sim_reset(void)
+{
+	memset(&stats, 0, sizeof(stats));
+	memset(blocks, 0, sizeof(blocks));
+	memset(pages, 0xff, sizeof(pages));
+}
+
 static void timebomb_tick(Dhara_block_t blk)
 {
 	struct block_status *b = &blocks[blk];

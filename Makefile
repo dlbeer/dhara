@@ -18,7 +18,8 @@ DHARA_CFLAGS = $(CFLAGS) -O1 -Wall -ggdb -I.
 TESTS = \
     tests/error.test \
     tests/nand.test \
-    tests/journal.test
+    tests/journal.test \
+    tests/recovery.test
 
 all: $(TESTS)
 
@@ -35,7 +36,11 @@ tests/nand.test: dhara/error.o tests/nand.o tests/sim.o tests/util.o
 	$(CC) -o $@ $^
 
 tests/journal.test: dhara/journal.o tests/journal.o tests/sim.o tests/util.o \
-		    dhara/error.o
+		    dhara/error.o tests/jtutil.o
+	$(CC) -o $@ $^
+
+tests/recovery.test: dhara/journal.o tests/recovery.o tests/sim.o tests/util.o \
+		     dhara/error.o tests/jtutil.o
 	$(CC) -o $@ $^
 
 clean:
