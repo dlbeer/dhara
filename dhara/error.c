@@ -22,7 +22,10 @@ const char *Dhara_strerror(Dhara_error_t err)
 	static const char *const messages[DHARA_E_MAX] = {
 		[DHARA_E_NONE] = "No error",
 		[DHARA_E_BAD_BLOCK] = "Bad page/eraseblock",
-		[DHARA_E_ECC] = "ECC failure"
+		[DHARA_E_ECC] = "ECC failure",
+		[DHARA_E_TOO_BAD] = "Too many bad blocks",
+		[DHARA_E_RECOVER] = "Journal recovery is required",
+		[DHARA_E_JOURNAL_FULL] = "Journal is full"
 	};
 	const char *msg = NULL;
 

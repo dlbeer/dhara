@@ -18,7 +18,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "sim.h"
-#include "seq.h"
+#include "util.h"
 
 #define LOG2_PAGE_SIZE		9
 #define LOG2_PAGES_PER_BLOCK	3
@@ -207,7 +207,7 @@ int Dhara_NAND_read(const struct Dhara_NAND *n, Dhara_page_t p,
 	uint8_t *page = pages + (p << LOG2_PAGE_SIZE);
 
 	if ((bno < 0) || (bno >= NUM_BLOCKS)) {
-		fprintf(stderr, "sim: NAND_prog called on "
+		fprintf(stderr, "sim: NAND_read called on "
 			"invalid block: %d\n", bno);
 		abort();
 	}

@@ -14,32 +14,20 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include <stdlib.h>
-#include <stdio.h>
-#include "seq.h"
+#ifndef TESTS_UTIL_H_
+#define TESTS_UTIL_H_
 
-void seq_gen(unsigned int seed, uint8_t *buf, size_t length)
-{
-	size_t i;
+#include <stdint.h>
+#include <stddef.h>
+#include "dhara/error.h"
 
-	srandom(seed);
-	for (i = 0; i < length; i++)
-		buf[i] = random();
-}
+/* Abort, displaying an error */
+void dabort(const char *message, Dhara_error_t err);
 
-void seq_assert(unsigned int seed, const uint8_t *buf, size_t length)
-{
-	size_t i;
+/* Generate a pseudo-random sequence of data */
+void seq_gen(unsigned int seed, uint8_t *buf, size_t length);
 
-	srandom(seed);
-	for (i = 0; i < length; i++) {
-		const uint8_t expect = random();
+/* Check a pseudo-random sequence */
+void seq_assert(unsigned int seed, const uint8_t *buf, size_t length);
 
-		if (buf[i] != expect) {
-			fprintf(stderr, "seq_assert: mismatch at %ld in "
-				"sequence %d: 0x%02x (expected 0x%02x)\n",
-				i, seed, buf[i], expect);
-			abort();
-		}
-	}
-}
+#endif

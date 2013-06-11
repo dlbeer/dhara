@@ -14,29 +14,37 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef DHARA_ERROR_H_
-#define DHARA_ERROR_H_
+#ifndef DHARA_BYTES_H_
+#define DHARA_BYTES_H_
 
-typedef enum {
-	DHARA_E_NONE = 0,
-	DHARA_E_BAD_BLOCK,
-	DHARA_E_ECC,
-	DHARA_E_TOO_BAD,
-	DHARA_E_RECOVER,
-	DHARA_E_JOURNAL_FULL,
-	DHARA_E_MAX
-} Dhara_error_t;
+#include <stdint.h>
 
-/* Produce a human-readable error message. This function is kept in a
- * separate compilation unit and can be omitted to reduce binary size.
- */
-const char *Dhara_strerror(Dhara_error_t err);
-
-/* Save an error */
-static inline void Dhara_set_error(Dhara_error_t *err, Dhara_error_t v)
+static inline uint16_t Dhara_r16(const uint8_t *data)
 {
-	if (err)
-		*err = v;
+	return ((uint16_t)data[0]) |
+	       (((uint16_t)data[1]) << 8);
+}
+
+static inline void Dhara_w16(uint8_t *data, uint16_t v)
+{
+	data[0] = v;
+	data[1] = v >> 8;
+}
+
+static inline uint32_t Dhara_r32(const uint8_t *data)
+{
+	return ((uint32_t)data[0]) |
+	       (((uint32_t)data[1]) << 8) |
+	       (((uint32_t)data[2]) << 16) |
+	       (((uint32_t)data[3]) << 24);
+}
+
+static inline void Dhara_w32(uint8_t *data, uint32_t v)
+{
+	data[0] = v;
+	data[1] = v >> 8;
+	data[2] = v >> 16;
+	data[3] = v >> 24;
 }
 
 #endif

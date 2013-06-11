@@ -17,7 +17,8 @@ CC = gcc
 DHARA_CFLAGS = $(CFLAGS) -O1 -Wall -ggdb -I.
 TESTS = \
     tests/error.test \
-    tests/nand.test
+    tests/nand.test \
+    tests/journal.test
 
 all: $(TESTS)
 
@@ -30,7 +31,11 @@ test: $(TESTS)
 tests/error.test: dhara/error.o tests/error.o
 	$(CC) -o $@ $^
 
-tests/nand.test: tests/nand.o tests/sim.o tests/seq.o
+tests/nand.test: dhara/error.o tests/nand.o tests/sim.o tests/util.o
+	$(CC) -o $@ $^
+
+tests/journal.test: dhara/journal.o tests/journal.o tests/sim.o tests/util.o \
+		    dhara/error.o
 	$(CC) -o $@ $^
 
 clean:
