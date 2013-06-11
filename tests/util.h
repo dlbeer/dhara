@@ -22,7 +22,7 @@
 #include "dhara/error.h"
 
 /* Abort, displaying an error */
-void dabort(const char *message, Dhara_error_t err);
+void dabort(const char *message, dhara_error_t err);
 
 /* Generate a pseudo-random sequence of data */
 void seq_gen(unsigned int seed, uint8_t *buf, size_t length);

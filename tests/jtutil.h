@@ -20,7 +20,7 @@
 #include "dhara/journal.h"
 
 /* Enqueue/dequeue seed/sequence pairs */
-void jt_enqueue(struct Dhara_Journal *j, int i);
-uint32_t jt_dequeue(struct Dhara_Journal *j, int expect);
+void jt_enqueue(struct dhara_journal *j, int i);
+uint32_t jt_dequeue(struct dhara_journal *j, int expect);
 
 #endif

@@ -22,7 +22,7 @@
 static void run(const char *name, void (*scen)(void))
 {
 	uint8_t page_buf[1 << sim_nand.log2_page_size];
-	struct Dhara_Journal journal;
+	struct dhara_journal journal;
 	int garbage_count = 0;
 	int next = 0;
 	int i;
@@ -34,7 +34,7 @@ static void run(const char *name, void (*scen)(void))
 	       "================================\n\n", name);
 
 	sim_reset();
-	Dhara_Journal_init(&journal, &sim_nand, page_buf);
+	dhara_journal_init(&journal, &sim_nand, page_buf);
 
 	/* All tests are tuned for this value */
 	assert(journal.log2_ppc == 2);

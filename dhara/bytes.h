@@ -19,19 +19,19 @@
 
 #include <stdint.h>
 
-static inline uint16_t Dhara_r16(const uint8_t *data)
+static inline uint16_t dhara_r16(const uint8_t *data)
 {
 	return ((uint16_t)data[0]) |
 	       (((uint16_t)data[1]) << 8);
 }
 
-static inline void Dhara_w16(uint8_t *data, uint16_t v)
+static inline void dhara_w16(uint8_t *data, uint16_t v)
 {
 	data[0] = v;
 	data[1] = v >> 8;
 }
 
-static inline uint32_t Dhara_r32(const uint8_t *data)
+static inline uint32_t dhara_r32(const uint8_t *data)
 {
 	return ((uint32_t)data[0]) |
 	       (((uint32_t)data[1]) << 8) |
@@ -39,7 +39,7 @@ static inline uint32_t Dhara_r32(const uint8_t *data)
 	       (((uint32_t)data[3]) << 24);
 }
 
-static inline void Dhara_w32(uint8_t *data, uint32_t v)
+static inline void dhara_w32(uint8_t *data, uint32_t v)
 {
 	data[0] = v;
 	data[1] = v >> 8;

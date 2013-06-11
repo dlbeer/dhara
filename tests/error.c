@@ -20,10 +20,10 @@
 
 int main(void)
 {
-	Dhara_error_t err;
+	dhara_error_t err;
 
 	for (err = DHARA_E_NONE; err < DHARA_E_MAX; err++) {
-		const char *msg = Dhara_strerror(err);
+		const char *msg = dhara_strerror(err);
 
 		assert(msg != NULL);
 		printf("%4d: %s\n", err, msg);

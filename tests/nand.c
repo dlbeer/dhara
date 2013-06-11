@@ -29,30 +29,30 @@ int main(void)
 
 		for (j = 0; j < sim_nand.num_blocks; j++) {
 			uint8_t block[1 << sim_nand.log2_page_size];
-			Dhara_error_t err;
-			Dhara_page_t p =
+			dhara_error_t err;
+			dhara_page_t p =
 				(j << sim_nand.log2_ppb) | i;
 
-			if (Dhara_NAND_is_bad(&sim_nand, j))
+			if (dhara_nand_is_bad(&sim_nand, j))
 				continue;
 
-			if (!i && (Dhara_NAND_erase(&sim_nand, j, &err) < 0))
+			if (!i && (dhara_nand_erase(&sim_nand, j, &err) < 0))
 				dabort("erase", err);
 
 			seq_gen(p, block, sizeof(block));
-			if (Dhara_NAND_prog(&sim_nand, p, block, &err) < 0)
+			if (dhara_nand_prog(&sim_nand, p, block, &err) < 0)
 				dabort("prog", err);
 		}
 	}
 
 	for (i = 0; i < (sim_nand.num_blocks << sim_nand.log2_ppb); i++) {
 		uint8_t block[1 << sim_nand.log2_page_size];
-		Dhara_error_t err;
+		dhara_error_t err;
 
-		if (Dhara_NAND_is_bad(&sim_nand, i >> sim_nand.log2_ppb))
+		if (dhara_nand_is_bad(&sim_nand, i >> sim_nand.log2_ppb))
 			continue;
 
-		if (Dhara_NAND_read(&sim_nand, i, 0, sizeof(block),
+		if (dhara_nand_read(&sim_nand, i, 0, sizeof(block),
 				    block, &err) < 0)
 			dabort("read", err);
 

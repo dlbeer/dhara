@@ -46,9 +46,9 @@ void seq_assert(unsigned int seed, const uint8_t *buf, size_t length)
 	}
 }
 
-void dabort(const char *message, Dhara_error_t err)
+void dabort(const char *message, dhara_error_t err)
 {
-	fprintf(stderr, "%s: Dhara_error_t => %s\n",
-		message, Dhara_strerror(err));
+	fprintf(stderr, "%s: dhara_error_t => %s\n",
+		message, dhara_strerror(err));
 	abort();
 }

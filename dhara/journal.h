@@ -37,7 +37,7 @@
 /* This is a page number which can be used to represent "no such page".
  * It's guaranteed to never be a valid user page.
  */
-#define DHARA_PAGE_NONE			((Dhara_page_t)0xffffffff)
+#define DHARA_PAGE_NONE			((dhara_page_t)0xffffffff)
 
 /* The journal layer presents the NAND pages as a double-ended queue.
  * Pages, with associated metadata may be pushed onto the end of the
@@ -52,8 +52,8 @@
  * assist with this. If the head meets the tail, the journal will refuse
  * to enqueue more pages.
  */
-struct Dhara_Journal {
-	const struct Dhara_NAND		*nand;
+struct dhara_journal {
+	const struct dhara_nand		*nand;
 	uint8_t				*page_buf;
 
 	/* In the journal, user data is grouped into checkpoints of
@@ -75,18 +75,18 @@ struct Dhara_Journal {
 	 * the number of bad blocks in all blocks before the current
 	 * head.
 	 */
-	Dhara_block_t			bb_current;
-	Dhara_block_t			bb_last;
+	dhara_block_t			bb_current;
+	dhara_block_t			bb_last;
 
 	/* Log head and tail. The tail pointer points to the last user
 	 * page in the log, and the head point points to the next free
 	 * raw page. The root points to the last written user page.
 	 */
-	Dhara_page_t			tail;
-	Dhara_page_t			head;
+	dhara_page_t			tail;
+	dhara_page_t			head;
 
 	/* This points to the last written user page in the journal */
-	Dhara_page_t			root;
+	dhara_page_t			root;
 
 	/* Recovery mode: recover_root points to the last valid user
 	 * page in the block requiring recovery. recover_next points to
@@ -97,10 +97,10 @@ struct Dhara_Journal {
 	 * recover_start indicates the first free page used when the
 	 * successful recovery started.
 	 */
-	Dhara_page_t			recover_next;
-	Dhara_page_t			recover_root;
-	Dhara_page_t			recover_meta;
-	Dhara_page_t			recover_start;
+	dhara_page_t			recover_next;
+	dhara_page_t			recover_root;
+	dhara_page_t			recover_meta;
+	dhara_page_t			recover_start;
 };
 
 /* Initialize a journal. You must supply a pointer to a NAND chip
@@ -110,8 +110,8 @@ struct Dhara_Journal {
  *
  * No NAND operations are performed at this point.
  */
-void Dhara_Journal_init(struct Dhara_Journal *j,
-			const struct Dhara_NAND *n,
+void dhara_journal_init(struct dhara_journal *j,
+			const struct dhara_nand *n,
 			uint8_t *page_buf);
 
 /* Start up the journal -- search the NAND for the journal head, or
@@ -123,26 +123,26 @@ void Dhara_Journal_init(struct Dhara_Journal *j,
  *
  * If this operation fails, the journal will be reset to an empty state.
  */
-int Dhara_Journal_resume(struct Dhara_Journal *j, Dhara_error_t *err);
+int dhara_journal_resume(struct dhara_journal *j, dhara_error_t *err);
 
 /* Obtain an upper bound on the number of user pages storable in the
  * journal.
  */
-Dhara_page_t Dhara_Journal_capacity(const struct Dhara_Journal *j);
+dhara_page_t dhara_journal_capacity(const struct dhara_journal *j);
 
 /* Obtain an upper bound on the number of user pages consumed by the
  * journal.
  */
-Dhara_page_t Dhara_Journal_size(const struct Dhara_Journal *j);
+dhara_page_t dhara_journal_size(const struct dhara_journal *j);
 
 /* Obtain the locations of the first and last pages in the journal.
  */
-static inline Dhara_page_t Dhara_Journal_root(const struct Dhara_Journal *j)
+static inline dhara_page_t dhara_journal_root(const struct dhara_journal *j)
 {
 	return j->root;
 }
 
-static inline Dhara_page_t Dhara_Journal_tail(const struct Dhara_Journal *j)
+static inline dhara_page_t dhara_journal_tail(const struct dhara_journal *j)
 {
 	return j->tail;
 }
@@ -151,13 +151,13 @@ static inline Dhara_page_t Dhara_Journal_tail(const struct Dhara_Journal *j)
  * provided is a valid data page. The actual page data is read via the
  * normal NAND interface.
  */
-int Dhara_Journal_read_meta(struct Dhara_Journal *j, Dhara_page_t p,
-			    uint8_t *buf, Dhara_error_t *err);
+int dhara_journal_read_meta(struct dhara_journal *j, dhara_page_t p,
+			    uint8_t *buf, dhara_error_t *err);
 
 /* Remove the last page from the journal. This doesn't take permanent
  * effect until the next checkpoint.
  */
-int Dhara_Journal_dequeue(struct Dhara_Journal *j, Dhara_error_t *err);
+int dhara_journal_dequeue(struct dhara_journal *j, dhara_error_t *err);
 
 /* Append a page to the journal. Both raw page data and metadata must be
  * specified. The push operation is not persistent until a checkpoint is
@@ -171,9 +171,9 @@ int Dhara_Journal_dequeue(struct Dhara_Journal *j, Dhara_error_t *err);
  * occur during recovery, E_RECOVER is returned, and the procedure must
  * be restarted.
  */
-int Dhara_Journal_enqueue(struct Dhara_Journal *j,
+int dhara_journal_enqueue(struct dhara_journal *j,
 			  const uint8_t *data, const uint8_t *meta,
-			  Dhara_error_t *err);
+			  dhara_error_t *err);
 
 /* Copy an existing page to the front of the journal. New metadata must
  * be specified. This operation is not persistent until a checkpoint is
@@ -187,23 +187,23 @@ int Dhara_Journal_enqueue(struct Dhara_Journal *j,
  * occur during recovery, E_RECOVER is returned, and the procedure must
  * be restarted.
  */
-int Dhara_Journal_copy(struct Dhara_Journal *j,
-		       Dhara_page_t p, const uint8_t *meta,
-		       Dhara_error_t *err);
+int dhara_journal_copy(struct dhara_journal *j,
+		       dhara_page_t p, const uint8_t *meta,
+		       dhara_error_t *err);
 
 /* Is the journal checkpointed? If true, then all pages enqueued are now
  * persistent.
  */
-int Dhara_Journal_is_checkpointed(const struct Dhara_Journal *j);
+int dhara_journal_is_checkpointed(const struct dhara_journal *j);
 
 /* These two functions comprise the assisted recovery procedure. If an
  * enqueue or copy operation returns an error of E_RECOVER, the journal
  * has been placed into recovery mode.
  *
- * Call Dhara_Journal_next_recoverable() to obtain the user page which
+ * Call dhara_journal_next_recoverable() to obtain the user page which
  * needs recovery. Perform whatever operations are necessary to recover
  * the page (usually copy() with updated metadata), and then call
- * Dhara_Journal_ack_recoverable().
+ * dhara_journal_ack_recoverable().
  *
  * If a further E_RECOVER error occurs during recovery, this indicates
  * that recovery needs to be restarted -- DO NOT call ack_recoverable()
@@ -212,17 +212,17 @@ int Dhara_Journal_is_checkpointed(const struct Dhara_Journal *j);
  * Bad-block marking will be performed automatically (after recovering
  * the last user page, and after a recovery failure).
  */
-static inline int Dhara_Journal_in_recovery(const struct Dhara_Journal *j)
+static inline int dhara_journal_in_recovery(const struct dhara_journal *j)
 {
 	return j->recover_root != DHARA_PAGE_NONE;
 }
 
-static inline Dhara_page_t Dhara_Journal_next_recoverable
-	(const struct Dhara_Journal *j)
+static inline dhara_page_t dhara_journal_next_recoverable
+	(const struct dhara_journal *j)
 {
 	return j->recover_next;
 }
 
-void Dhara_Journal_ack_recoverable(struct Dhara_Journal *j);
+void dhara_journal_ack_recoverable(struct dhara_journal *j);
 
 #endif

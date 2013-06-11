@@ -20,21 +20,21 @@
 #include "util.h"
 #include "jtutil.h"
 
-static void recover(struct Dhara_Journal *j)
+static void recover(struct dhara_journal *j)
 {
 	int retry_count = 0;
 
 	printf("    recover: start\n");
 
-	while (Dhara_Journal_in_recovery(j)) {
-		const Dhara_page_t p = Dhara_Journal_next_recoverable(j);
+	while (dhara_journal_in_recovery(j)) {
+		const dhara_page_t p = dhara_journal_next_recoverable(j);
 		uint8_t meta[DHARA_META_SIZE];
-		Dhara_error_t err;
+		dhara_error_t err;
 
-		if (Dhara_Journal_read_meta(j, p, meta, &err) < 0)
+		if (dhara_journal_read_meta(j, p, meta, &err) < 0)
 			dabort("read_meta", err);
 
-		if (Dhara_Journal_copy(j, p, meta, &err) < 0) {
+		if (dhara_journal_copy(j, p, meta, &err) < 0) {
 			if (err == DHARA_E_RECOVER) {
 				printf("    recover: restart\n");
 				if (++retry_count >= DHARA_MAX_RETRIES)
@@ -45,25 +45,25 @@ static void recover(struct Dhara_Journal *j)
 			dabort("copy", err);
 		}
 
-		Dhara_Journal_ack_recoverable(j);
+		dhara_journal_ack_recoverable(j);
 	}
 
 	printf("    recover: complete\n");
 }
 
-void jt_enqueue(struct Dhara_Journal *j, int i)
+void jt_enqueue(struct dhara_journal *j, int i)
 {
 	const int page_size = 1 << j->nand->log2_page_size;
 	uint8_t r[page_size];
 	uint8_t meta[DHARA_META_SIZE];
-	Dhara_error_t err;
+	dhara_error_t err;
 	int retry_count = 0;
 
 	seq_gen(i, r, page_size);
-	Dhara_w32(meta, i);
+	dhara_w32(meta, i);
 
 retry:
-	if (Dhara_Journal_enqueue(j, r, meta, &err) < 0) {
+	if (dhara_journal_enqueue(j, r, meta, &err) < 0) {
 		if (err == DHARA_E_RECOVER) {
 			recover(j);
 			if (++retry_count >= DHARA_MAX_RETRIES)
@@ -74,35 +74,35 @@ retry:
 		dabort("enqueue", err);
 	}
 
-	if (Dhara_Journal_read_meta(j, Dhara_Journal_root(j), meta, &err) < 0)
+	if (dhara_journal_read_meta(j, dhara_journal_root(j), meta, &err) < 0)
 		dabort("read_meta", err);
 
-	assert(Dhara_r32(meta) == i);
+	assert(dhara_r32(meta) == i);
 }
 
-uint32_t jt_dequeue(struct Dhara_Journal *j, int expect)
+uint32_t jt_dequeue(struct dhara_journal *j, int expect)
 {
 	const int page_size = 1 << j->nand->log2_page_size;
 	uint8_t r[page_size];
 	uint8_t meta[DHARA_META_SIZE];
-	const Dhara_page_t tail = Dhara_Journal_tail(j);
+	const dhara_page_t tail = dhara_journal_tail(j);
 	uint32_t seed;
-	Dhara_error_t err;
+	dhara_error_t err;
 
-	if (Dhara_Journal_read_meta(j, tail, meta, &err) < 0)
+	if (dhara_journal_read_meta(j, tail, meta, &err) < 0)
 		dabort("read_meta", err);
 
-	seed = Dhara_r32(meta);
+	seed = dhara_r32(meta);
 	assert((expect < 0) || (expect == seed));
 
-	if (Dhara_NAND_read(j->nand, tail, 0, page_size, r,
+	if (dhara_nand_read(j->nand, tail, 0, page_size, r,
 			    &err) < 0)
 		dabort("NAND_read", err);
 
 	if (seed != 0xffffffff)
 		seq_assert(seed, r, page_size);
 
-	if (Dhara_Journal_dequeue(j, &err) < 0)
+	if (dhara_journal_dequeue(j, &err) < 0)
 		dabort("dequeue", err);
 
 	return seed;

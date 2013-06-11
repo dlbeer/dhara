@@ -25,15 +25,15 @@ typedef enum {
 	DHARA_E_RECOVER,
 	DHARA_E_JOURNAL_FULL,
 	DHARA_E_MAX
-} Dhara_error_t;
+} dhara_error_t;
 
 /* Produce a human-readable error message. This function is kept in a
  * separate compilation unit and can be omitted to reduce binary size.
  */
-const char *Dhara_strerror(Dhara_error_t err);
+const char *dhara_strerror(dhara_error_t err);
 
 /* Save an error */
-static inline void Dhara_set_error(Dhara_error_t *err, Dhara_error_t v)
+static inline void dhara_set_error(dhara_error_t *err, dhara_error_t v)
 {
 	if (err)
 		*err = v;

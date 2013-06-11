@@ -22,37 +22,37 @@
 #include "util.h"
 #include "jtutil.h"
 
-static void suspend_resume(struct Dhara_Journal *j)
+static void suspend_resume(struct dhara_journal *j)
 {
-	const Dhara_page_t old_root = Dhara_Journal_root(j);
-	const Dhara_page_t old_tail = Dhara_Journal_tail(j);
-	const Dhara_page_t old_head = j->head;
-	Dhara_error_t err;
+	const dhara_page_t old_root = dhara_journal_root(j);
+	const dhara_page_t old_tail = dhara_journal_tail(j);
+	const dhara_page_t old_head = j->head;
+	dhara_error_t err;
 
 	j->root = DHARA_PAGE_NONE;
 	j->head = DHARA_PAGE_NONE;
 	j->tail = DHARA_PAGE_NONE;
 
-	if (Dhara_Journal_resume(j, &err) < 0)
+	if (dhara_journal_resume(j, &err) < 0)
 		dabort("resume", err);
 
-	assert(old_root == Dhara_Journal_root(j));
-	assert(old_tail == Dhara_Journal_tail(j));
+	assert(old_root == dhara_journal_root(j));
+	assert(old_tail == dhara_journal_tail(j));
 	assert(old_head == j->head);
 }
 
-static void dump_info(struct Dhara_Journal *j)
+static void dump_info(struct dhara_journal *j)
 {
 	printf("    log2_ppc   = %d\n", j->log2_ppc);
-	printf("    size       = %d\n", Dhara_Journal_size(j));
-	printf("    capacity   = %d\n", Dhara_Journal_capacity(j));
+	printf("    size       = %d\n", dhara_journal_size(j));
+	printf("    capacity   = %d\n", dhara_journal_capacity(j));
 	printf("    bb_current = %d\n", j->bb_current);
 	printf("    bb_last    = %d\n", j->bb_last);
 }
 
 int main(void)
 {
-	struct Dhara_Journal journal;
+	struct dhara_journal journal;
 	const size_t page_size = 1 << sim_nand.log2_page_size;
 	uint8_t page_buf[page_size];
 	int i;
@@ -62,7 +62,7 @@ int main(void)
 	sim_inject_bad(20);
 
 	printf("Journal init\n");
-	Dhara_Journal_init(&journal, &sim_nand, page_buf);
+	dhara_journal_init(&journal, &sim_nand, page_buf);
 	dump_info(&journal);
 	printf("\n");
 
@@ -70,10 +70,10 @@ int main(void)
 	for (rep = 0; rep < 20; rep++) {
 		for (i = 0; i < 100; i++)
 			jt_enqueue(&journal, i);
-		printf("    size     = %d -> ", Dhara_Journal_size(&journal));
+		printf("    size     = %d -> ", dhara_journal_size(&journal));
 		for (i = 0; i < 100; i++)
 			jt_dequeue(&journal, i);
-		printf("%d\n", Dhara_Journal_size(&journal));
+		printf("%d\n", dhara_journal_size(&journal));
 	}
 	printf("\n");
 
@@ -88,15 +88,15 @@ int main(void)
 		for (i = 0; i < 100; i++)
 			jt_enqueue(&journal, i);
 
-		while (!Dhara_Journal_is_checkpointed(&journal))
+		while (!dhara_journal_is_checkpointed(&journal))
 			jt_enqueue(&journal, i++);
 
-		printf("    size     = %d -> ", Dhara_Journal_size(&journal));
+		printf("    size     = %d -> ", dhara_journal_size(&journal));
 		suspend_resume(&journal);
 
 		for (j = 0; j < i; j++)
 			jt_dequeue(&journal, j);
-		printf("%d\n", Dhara_Journal_size(&journal));
+		printf("%d\n", dhara_journal_size(&journal));
 	}
 	printf("\n");
 

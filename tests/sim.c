@@ -30,7 +30,7 @@
 #define BLOCK_SIZE		(1 << LOG2_BLOCK_SIZE)
 #define MEM_SIZE		(NUM_BLOCKS * BLOCK_SIZE)
 
-const struct Dhara_NAND sim_nand = {
+const struct dhara_nand sim_nand = {
 	.log2_page_size		= LOG2_PAGE_SIZE,
 	.log2_ppb		= LOG2_PAGES_PER_BLOCK,
 	.num_blocks		= NUM_BLOCKS
@@ -80,7 +80,7 @@ void sim_reset(void)
 	memset(pages, 0xff, sizeof(pages));
 }
 
-static void timebomb_tick(Dhara_block_t blk)
+static void timebomb_tick(dhara_block_t blk)
 {
 	struct block_status *b = &blocks[blk];
 
@@ -91,7 +91,7 @@ static void timebomb_tick(Dhara_block_t blk)
 	}
 }
 
-int Dhara_NAND_is_bad(const struct Dhara_NAND *n, Dhara_block_t bno)
+int dhara_nand_is_bad(const struct dhara_nand *n, dhara_block_t bno)
 {
 	if (bno >= NUM_BLOCKS) {
 		fprintf(stderr, "sim: NAND_is_bad called on "
@@ -103,7 +103,7 @@ int Dhara_NAND_is_bad(const struct Dhara_NAND *n, Dhara_block_t bno)
 	return blocks[bno].flags & BLOCK_BAD_MARK;
 }
 
-void Dhara_NAND_mark_bad(const struct Dhara_NAND *n, Dhara_block_t bno)
+void dhara_nand_mark_bad(const struct dhara_nand *n, dhara_block_t bno)
 {
 	if (bno >= NUM_BLOCKS) {
 		fprintf(stderr, "sim: NAND_mark_bad called on "
@@ -115,8 +115,8 @@ void Dhara_NAND_mark_bad(const struct Dhara_NAND *n, Dhara_block_t bno)
 	blocks[bno].flags |= BLOCK_BAD_MARK;
 }
 
-int Dhara_NAND_erase(const struct Dhara_NAND *n, Dhara_block_t bno,
-		     Dhara_error_t *err)
+int dhara_nand_erase(const struct dhara_nand *n, dhara_block_t bno,
+		     dhara_error_t *err)
 {
 	uint8_t *blk = pages + (bno << LOG2_BLOCK_SIZE);
 
@@ -140,7 +140,7 @@ int Dhara_NAND_erase(const struct Dhara_NAND *n, Dhara_block_t bno,
 	if (blocks[bno].flags & BLOCK_FAILED) {
 		stats.erase_fail++;
 		seq_gen(bno * 57 + 29, blk, BLOCK_SIZE);
-		Dhara_set_error(err, DHARA_E_BAD_BLOCK);
+		dhara_set_error(err, DHARA_E_BAD_BLOCK);
 		return -1;
 	}
 
@@ -148,8 +148,8 @@ int Dhara_NAND_erase(const struct Dhara_NAND *n, Dhara_block_t bno,
 	return 0;
 }
 
-int Dhara_NAND_prog(const struct Dhara_NAND *n, Dhara_page_t p,
-		    const uint8_t *data, Dhara_error_t *err)
+int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p,
+		    const uint8_t *data, dhara_error_t *err)
 {
 	const int bno = p >> LOG2_PAGES_PER_BLOCK;
 	const int pno = p & ((1 << LOG2_PAGES_PER_BLOCK) - 1);
@@ -183,7 +183,7 @@ int Dhara_NAND_prog(const struct Dhara_NAND *n, Dhara_page_t p,
 	if (blocks[bno].flags & BLOCK_FAILED) {
 		stats.prog_fail++;
 		seq_gen(p * 57 + 29, page, PAGE_SIZE);
-		Dhara_set_error(err, DHARA_E_BAD_BLOCK);
+		dhara_set_error(err, DHARA_E_BAD_BLOCK);
 		return -1;
 	}
 
@@ -191,7 +191,7 @@ int Dhara_NAND_prog(const struct Dhara_NAND *n, Dhara_page_t p,
 	return 0;
 }
 
-int Dhara_NAND_is_free(const struct Dhara_NAND *n, Dhara_page_t p)
+int dhara_nand_is_free(const struct dhara_nand *n, dhara_page_t p)
 {
 	const int bno = p >> LOG2_PAGES_PER_BLOCK;
 	const int pno = p & ((1 << LOG2_PAGES_PER_BLOCK) - 1);
@@ -206,9 +206,9 @@ int Dhara_NAND_is_free(const struct Dhara_NAND *n, Dhara_page_t p)
 	return blocks[bno].next_page <= pno;
 }
 
-int Dhara_NAND_read(const struct Dhara_NAND *n, Dhara_page_t p,
+int dhara_nand_read(const struct dhara_nand *n, dhara_page_t p,
 		    size_t offset, size_t length,
-		    uint8_t *data, Dhara_error_t *err)
+		    uint8_t *data, dhara_error_t *err)
 {
 	const int bno = p >> LOG2_PAGES_PER_BLOCK;
 	uint8_t *page = pages + (p << LOG2_PAGE_SIZE);
@@ -234,14 +234,14 @@ int Dhara_NAND_read(const struct Dhara_NAND *n, Dhara_page_t p,
 	return 0;
 }
 
-int Dhara_NAND_copy(const struct Dhara_NAND *n,
-		    Dhara_page_t src, Dhara_page_t dst,
-		    Dhara_error_t *err)
+int dhara_nand_copy(const struct dhara_nand *n,
+		    dhara_page_t src, dhara_page_t dst,
+		    dhara_error_t *err)
 {
 	uint8_t buf[PAGE_SIZE];
 
-	if ((Dhara_NAND_read(n, src, 0, PAGE_SIZE, buf, err) < 0) ||
-	    (Dhara_NAND_prog(n, dst, buf, err) < 0))
+	if ((dhara_nand_read(n, src, 0, PAGE_SIZE, buf, err) < 0) ||
+	    (dhara_nand_prog(n, dst, buf, err) < 0))
 		return -1;
 
 	return 0;
@@ -266,12 +266,12 @@ static char rep_status(const struct block_status *b)
 	return '.';
 }
 
-void sim_set_failed(Dhara_block_t bno)
+void sim_set_failed(dhara_block_t bno)
 {
 	blocks[bno].flags |= BLOCK_FAILED;
 }
 
-void sim_set_timebomb(Dhara_block_t bno, int ttl)
+void sim_set_timebomb(dhara_block_t bno, int ttl)
 {
 	blocks[bno].timebomb = ttl;
 }

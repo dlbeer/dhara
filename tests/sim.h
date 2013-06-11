@@ -22,7 +22,7 @@
 /* Simulated NAND layer. This layer reads and writes to an in-memory
  * buffer.
  */
-extern const struct Dhara_NAND sim_nand;
+extern const struct dhara_nand sim_nand;
 
 /* Reset to start-up defaults */
 void sim_reset(void);
@@ -31,8 +31,8 @@ void sim_reset(void);
 void sim_dump(void);
 
 /* Set faults on individual blocks */
-void sim_set_failed(Dhara_block_t blk);
-void sim_set_timebomb(Dhara_block_t blk, int ttl);
+void sim_set_failed(dhara_block_t blk);
+void sim_set_timebomb(dhara_block_t blk, int ttl);
 
 /* Create some factory-marked bad blocks */
 void sim_inject_bad(int count);
