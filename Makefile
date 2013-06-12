@@ -19,7 +19,8 @@ TESTS = \
     tests/error.test \
     tests/nand.test \
     tests/journal.test \
-    tests/recovery.test
+    tests/recovery.test \
+    tests/jfill.test
 
 all: $(TESTS)
 
@@ -41,6 +42,10 @@ tests/journal.test: dhara/journal.o tests/journal.o tests/sim.o tests/util.o \
 
 tests/recovery.test: dhara/journal.o tests/recovery.o tests/sim.o tests/util.o \
 		     dhara/error.o tests/jtutil.o
+	$(CC) -o $@ $^
+
+tests/jfill.test: dhara/journal.o tests/jfill.o tests/sim.o dhara/error.o \
+		  tests/util.o tests/jtutil.o
 	$(CC) -o $@ $^
 
 clean:

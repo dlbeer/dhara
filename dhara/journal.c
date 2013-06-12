@@ -401,7 +401,7 @@ dhara_page_t dhara_journal_capacity(const struct dhara_journal *j)
 {
 	const dhara_block_t max_bad = j->bb_last > j->bb_current ?
 		j->bb_last : j->bb_current;
-	const dhara_block_t good_blocks = j->nand->num_blocks - max_bad;
+	const dhara_block_t good_blocks = j->nand->num_blocks - max_bad - 1;
 	const int log2_cpb = j->nand->log2_ppb - j->log2_ppc;
 	const dhara_page_t good_cps = good_blocks << log2_cpb;
 
@@ -430,6 +430,16 @@ dhara_page_t dhara_journal_size(const struct dhara_journal *j)
 	num_cps -= j->tail >> j->log2_ppc;
 
 	return num_pages - num_cps;
+}
+
+static int check_size(const struct dhara_journal *j, dhara_error_t *err)
+{
+	if (dhara_journal_size(j) >= dhara_journal_capacity(j)) {
+		dhara_set_error(err, DHARA_E_JOURNAL_FULL);
+		return -1;
+	}
+
+	return 0;
 }
 
 int dhara_journal_read_meta(struct dhara_journal *j, dhara_page_t p,
@@ -669,7 +679,7 @@ static int push_meta(struct dhara_journal *j, const uint8_t *meta,
 	/* Find the next free page */
 	if (is_aligned(j->head + 1, j->nand->log2_ppb)) {
 		if (advance_head_block(j, err) < 0) {
-			j->head &= ~((1 << j->nand->log2_ppb) - 1);
+			j->head = old_head;
 			return -1;
 		}
 	} else {
@@ -701,6 +711,9 @@ int dhara_journal_enqueue(struct dhara_journal *j,
 	dhara_error_t my_err;
 	int i;
 
+	if (check_size(j, err) < 0)
+		return -1;
+
 	for (i = 0; i < DHARA_MAX_RETRIES; i++) {
 		if (!(prepare_prog(j->nand, j->head, j->tail, &my_err) ||
 		      dhara_nand_prog(j->nand, j->head, data, &my_err)))
@@ -720,6 +733,9 @@ int dhara_journal_copy(struct dhara_journal *j,
 {
 	dhara_error_t my_err;
 	int i;
+
+	if (check_size(j, err) < 0)
+		return -1;
 
 	for (i = 0; i < DHARA_MAX_RETRIES; i++) {
 		if (!(prepare_prog(j->nand, j->head, j->tail, &my_err) ||
