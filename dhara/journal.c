@@ -18,6 +18,68 @@
 #include "journal.h"
 #include "bytes.h"
 
+/************************************************************************
+ * Metapage binary format
+ */
+
+/* Does the page buffer contain a valid checkpoint page? */
+static inline int hdr_has_magic(const uint8_t *buf)
+{
+	return (buf[0] == 'D') &&
+	       (buf[1] == 'h') &&
+	       (buf[2] == 'a');
+}
+
+static inline void hdr_put_magic(uint8_t *buf)
+{
+	buf[0] = 'D';
+	buf[1] = 'h';
+	buf[2] = 'a';
+}
+
+/* What epoch is this page? */
+static inline uint8_t hdr_get_epoch(const uint8_t *buf)
+{
+	return buf[3];
+}
+
+static inline void hdr_set_epoch(uint8_t *buf, uint8_t e)
+{
+	buf[3] = e;
+}
+
+static inline dhara_page_t hdr_get_tail(const uint8_t *buf)
+{
+	return dhara_r32(buf + 4);
+}
+
+static inline void hdr_set_tail(uint8_t *buf, dhara_page_t tail)
+{
+	dhara_w32(buf + 4, tail);
+}
+
+static inline dhara_page_t hdr_get_bb_current(const uint8_t *buf)
+{
+	return dhara_r32(buf + 8);
+}
+
+static inline void hdr_set_bb_current(uint8_t *buf, dhara_page_t count)
+{
+	dhara_w32(buf + 8, count);
+}
+
+static inline dhara_page_t hdr_get_bb_last(const uint8_t *buf)
+{
+	return dhara_r32(buf + 12);
+}
+
+static inline void hdr_set_bb_last(uint8_t *buf, dhara_page_t count)
+{
+	dhara_w32(buf + 12, count);
+}
+
+/************************************************************************/
+
 /* Is this page index aligned to N bits? */
 static inline int is_aligned(dhara_page_t p, int n)
 {
@@ -132,20 +194,6 @@ void dhara_journal_init(struct dhara_journal *j,
 	reset_journal(j);
 }
 
-/* Does the page buffer contain a valid checkpoint page? */
-static inline int is_checkpoint(const struct dhara_journal *j)
-{
-	return (j->page_buf[0] == 'D') &&
-	       (j->page_buf[1] == 'h') &&
-	       (j->page_buf[2] == 'a');
-}
-
-/* What epoch is this page? */
-static inline uint8_t is_epoch(const struct dhara_journal *j)
-{
-	return j->page_buf[3] == j->epoch;
-}
-
 /* Find the first checkpoint-containing block. If a block contains any
  * checkpoints at all, then it must contain one in the first checkpoint
  * location -- otherwise, we would have considered the block eraseable.
@@ -166,7 +214,7 @@ static int find_checkblock(struct dhara_journal *j,
 		      dhara_nand_read(j->nand, p,
 				      0, 1 << j->nand->log2_page_size,
 				      j->page_buf, err)) &&
-		    is_checkpoint(j)) {
+		    hdr_has_magic(j->page_buf)) {
 			*where = blk;
 			return 0;
 		}
@@ -189,7 +237,7 @@ static dhara_block_t find_last_checkblock(struct dhara_journal *j,
 		dhara_block_t found;
 
 		if ((find_checkblock(j, mid, &found, NULL) < 0) ||
-		    !is_epoch(j)) {
+		    (hdr_get_epoch(j->page_buf) != j->epoch)) {
 			if (!mid)
 				return first;
 
@@ -200,7 +248,7 @@ static dhara_block_t find_last_checkblock(struct dhara_journal *j,
 			if (((found + 1) >= j->nand->num_blocks) ||
 			    (find_checkblock(j, found + 1,
 					     &nf, NULL) < 0) ||
-			    !is_epoch(j))
+			    (hdr_get_epoch(j->page_buf) != j->epoch))
 				return found;
 
 			low = nf;
@@ -257,7 +305,7 @@ static int find_root(struct dhara_journal *j, dhara_page_t start,
 		if (!dhara_nand_read(j->nand, p,
 				     0, 1 << j->nand->log2_page_size,
 				     j->page_buf, err) &&
-		    is_epoch(j)) {
+		    (hdr_get_epoch(j->page_buf) == j->epoch)) {
 			j->root = p - 1;
 			return 0;
 		}
@@ -304,7 +352,7 @@ int dhara_journal_resume(struct dhara_journal *j, dhara_error_t *err)
 	}
 
 	/* Find the last checkpoint-containing block in this epoch */
-	j->epoch = j->page_buf[3];
+	j->epoch = hdr_get_epoch(j->page_buf);
 	last = find_last_checkblock(j, first);
 
 	/* Find the last programmed checkpoint group in the block */
@@ -319,9 +367,9 @@ int dhara_journal_resume(struct dhara_journal *j, dhara_error_t *err)
 	}
 
 	/* Restore settings from checkpoint */
-	j->tail = dhara_r32(j->page_buf + 4);
-	j->bb_current = dhara_r32(j->page_buf + 8);
-	j->bb_last = dhara_r32(j->page_buf + 12);
+	j->tail = hdr_get_tail(j->page_buf);
+	j->bb_current = hdr_get_bb_current(j->page_buf);
+	j->bb_last = hdr_get_bb_last(j->page_buf);
 	memset(j->page_buf, 0xff, 1 << j->nand->log2_page_size);
 
 	/* Perform another linear scan to find the next free user page */
@@ -587,13 +635,11 @@ static int push_meta(struct dhara_journal *j, const uint8_t *meta,
 	/* We don't need to check for immediate recover, because that'll
 	 * never happen -- we're not block-aligned.
 	 */
-	j->page_buf[0] = 'D';
-	j->page_buf[1] = 'h';
-	j->page_buf[2] = 'a';
-	j->page_buf[3] = j->epoch;
-	dhara_w32(j->page_buf + 4, j->tail);
-	dhara_w32(j->page_buf + 8, j->bb_current);
-	dhara_w32(j->page_buf + 12, j->bb_last);
+	hdr_put_magic(j->page_buf);
+	hdr_set_epoch(j->page_buf, j->epoch);
+	hdr_set_tail(j->page_buf, j->tail);
+	hdr_set_bb_current(j->page_buf, j->bb_current);
+	hdr_set_bb_last(j->page_buf, j->bb_last);
 
 	if (dhara_nand_prog(j->nand, j->head, j->page_buf, &my_err) < 0)
 		return recover_from(j, my_err, err);
