@@ -171,6 +171,11 @@ int dhara_journal_read_meta(struct dhara_journal *j, dhara_page_t p,
  */
 int dhara_journal_dequeue(struct dhara_journal *j, dhara_error_t *err);
 
+/* Remove all pages form the journal. This doesn't take permanent effect
+ * until the next checkpoint.
+ */
+void dhara_journal_clear(struct dhara_journal *j);
+
 /* Append a page to the journal. Both raw page data and metadata must be
  * specified. The push operation is not persistent until a checkpoint is
  * reached.

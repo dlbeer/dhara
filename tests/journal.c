@@ -30,10 +30,9 @@ static void suspend_resume(struct dhara_journal *j)
 	const dhara_page_t old_head = j->head;
 	dhara_error_t err;
 
-	j->root = DHARA_PAGE_NONE;
-	j->head = DHARA_PAGE_NONE;
-	j->tail = DHARA_PAGE_NONE;
-	memset(j->page_buf, 0xff, sizeof(j->page_buf));
+	dhara_journal_clear(j);
+	assert(dhara_journal_root(j) == DHARA_PAGE_NONE);
+	assert(dhara_journal_size(j) == 0);
 
 	if (dhara_journal_resume(j, &err) < 0)
 		dabort("resume", err);

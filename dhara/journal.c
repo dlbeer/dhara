@@ -500,6 +500,14 @@ int dhara_journal_dequeue(struct dhara_journal *j, dhara_error_t *err)
 	return 0;
 }
 
+void dhara_journal_clear(struct dhara_journal *j)
+{
+	j->tail = j->head;
+	j->root = DHARA_PAGE_NONE;
+
+	hdr_clear_user(j->page_buf, j->nand->log2_page_size);
+}
+
 static void restart_recovery(struct dhara_journal *j, dhara_page_t old_head)
 {
 	/* Mark the current head bad immediately, unless we're also
