@@ -132,6 +132,20 @@ void dhara_journal_init(struct dhara_journal *j,
 	reset_journal(j);
 }
 
+/* Does the page buffer contain a valid checkpoint page? */
+static inline int is_checkpoint(const struct dhara_journal *j)
+{
+	return (j->page_buf[0] == 'D') &&
+	       (j->page_buf[1] == 'h') &&
+	       (j->page_buf[2] == 'a');
+}
+
+/* What epoch is this page? */
+static inline uint8_t is_epoch(const struct dhara_journal *j)
+{
+	return j->page_buf[3] == j->epoch;
+}
+
 /* Find the first checkpoint-containing block. If a block contains any
  * checkpoints at all, then it must contain one in the first checkpoint
  * location -- otherwise, we would have considered the block eraseable.
@@ -151,7 +165,8 @@ static int find_checkblock(struct dhara_journal *j,
 		if (!(dhara_nand_is_bad(j->nand, blk) ||
 		      dhara_nand_read(j->nand, p,
 				      0, 1 << j->nand->log2_page_size,
-				      j->page_buf, err))) {
+				      j->page_buf, err)) &&
+		    is_checkpoint(j)) {
 			*where = blk;
 			return 0;
 		}
@@ -174,7 +189,10 @@ static dhara_block_t find_last_checkblock(struct dhara_journal *j,
 		dhara_block_t found;
 
 		if ((find_checkblock(j, mid, &found, NULL) < 0) ||
-		    (j->page_buf[12] != j->epoch)) {
+		    !is_epoch(j)) {
+			if (!mid)
+				return first;
+
 			high = mid - 1;
 		} else {
 			dhara_block_t nf;
@@ -182,7 +200,7 @@ static dhara_block_t find_last_checkblock(struct dhara_journal *j,
 			if (((found + 1) >= j->nand->num_blocks) ||
 			    (find_checkblock(j, found + 1,
 					     &nf, NULL) < 0) ||
-			    (j->page_buf[12] != j->epoch))
+			    !is_epoch(j))
 				return found;
 
 			low = nf;
@@ -238,7 +256,8 @@ static int find_root(struct dhara_journal *j, dhara_page_t start,
 
 		if (!dhara_nand_read(j->nand, p,
 				     0, 1 << j->nand->log2_page_size,
-				     j->page_buf, err)) {
+				     j->page_buf, err) &&
+		    is_epoch(j)) {
 			j->root = p - 1;
 			return 0;
 		}
@@ -285,7 +304,7 @@ int dhara_journal_resume(struct dhara_journal *j, dhara_error_t *err)
 	}
 
 	/* Find the last checkpoint-containing block in this epoch */
-	j->epoch = j->page_buf[12];
+	j->epoch = j->page_buf[3];
 	last = find_last_checkblock(j, first);
 
 	/* Find the last programmed checkpoint group in the block */
@@ -300,9 +319,9 @@ int dhara_journal_resume(struct dhara_journal *j, dhara_error_t *err)
 	}
 
 	/* Restore settings from checkpoint */
-	j->tail = dhara_r32(j->page_buf);
-	j->bb_current = dhara_r32(j->page_buf + 4);
-	j->bb_last = dhara_r32(j->page_buf + 8);
+	j->tail = dhara_r32(j->page_buf + 4);
+	j->bb_current = dhara_r32(j->page_buf + 8);
+	j->bb_last = dhara_r32(j->page_buf + 12);
 	memset(j->page_buf, 0xff, 1 << j->nand->log2_page_size);
 
 	/* Perform another linear scan to find the next free user page */
@@ -568,10 +587,13 @@ static int push_meta(struct dhara_journal *j, const uint8_t *meta,
 	/* We don't need to check for immediate recover, because that'll
 	 * never happen -- we're not block-aligned.
 	 */
-	dhara_w32(j->page_buf, j->tail);
-	dhara_w32(j->page_buf + 4, j->bb_current);
-	dhara_w32(j->page_buf + 8, j->bb_last);
-	j->page_buf[12] = j->epoch;
+	j->page_buf[0] = 'D';
+	j->page_buf[1] = 'h';
+	j->page_buf[2] = 'a';
+	j->page_buf[3] = j->epoch;
+	dhara_w32(j->page_buf + 4, j->tail);
+	dhara_w32(j->page_buf + 8, j->bb_current);
+	dhara_w32(j->page_buf + 12, j->bb_last);
 
 	if (dhara_nand_prog(j->nand, j->head, j->page_buf, &my_err) < 0)
 		return recover_from(j, my_err, err);
