@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <string.h>
 #include "dhara/journal.h"
 #include "sim.h"
 #include "util.h"
@@ -32,6 +33,7 @@ static void suspend_resume(struct dhara_journal *j)
 	j->root = DHARA_PAGE_NONE;
 	j->head = DHARA_PAGE_NONE;
 	j->tail = DHARA_PAGE_NONE;
+	memset(j->page_buf, 0xff, sizeof(j->page_buf));
 
 	if (dhara_journal_resume(j, &err) < 0)
 		dabort("resume", err);
@@ -83,8 +85,10 @@ int main(void)
 
 	printf("Enqueue/dequeue, ~100 pages x20 (resume)\n");
 	for (rep = 0; rep < 20; rep++) {
+		uint8_t *cookie = dhara_journal_cookie(&journal);
 		int j;
 
+		cookie[0] = rep;
 		for (i = 0; i < 100; i++)
 			jt_enqueue(&journal, i);
 
@@ -97,6 +101,8 @@ int main(void)
 		for (j = 0; j < i; j++)
 			jt_dequeue(&journal, j);
 		printf("%d\n", dhara_journal_size(&journal));
+
+		assert(cookie[0] == rep);
 	}
 	printf("\n");
 

@@ -23,6 +23,12 @@
 /* Number of bytes used by the journal checkpoint header. */
 #define DHARA_HEADER_SIZE		16
 
+/* Global metadata available for a higher layer. This metadata is
+ * persistent once the journal reaches a checkpoint, and is restored on
+ * startup.
+ */
+#define DHARA_COOKIE_SIZE		4
+
 /* This is the size of the metadata slice which accompanies each written
  * page. This is independent of the underlying page/OOB size.
  */
@@ -134,6 +140,12 @@ dhara_page_t dhara_journal_capacity(const struct dhara_journal *j);
  * journal.
  */
 dhara_page_t dhara_journal_size(const struct dhara_journal *j);
+
+/* Obtain a pointer to the cookie data */
+static inline uint8_t *dhara_journal_cookie(const struct dhara_journal *j)
+{
+	return j->page_buf + DHARA_HEADER_SIZE;
+}
 
 /* Obtain the locations of the first and last pages in the journal.
  */

@@ -78,6 +78,20 @@ static inline void hdr_set_bb_last(uint8_t *buf, dhara_page_t count)
 	dhara_w32(buf + 12, count);
 }
 
+/* Clear user metadata */
+static inline void hdr_clear_user(uint8_t *buf, uint8_t log2_page_size)
+{
+	memset(buf + DHARA_HEADER_SIZE + DHARA_COOKIE_SIZE, 0xff,
+	       (1 << log2_page_size) - DHARA_HEADER_SIZE - DHARA_COOKIE_SIZE);
+}
+
+/* Obtain pointers to user data */
+static inline size_t hdr_user_offset(uint8_t which)
+{
+	return DHARA_HEADER_SIZE + DHARA_COOKIE_SIZE +
+		which * DHARA_META_SIZE;
+}
+
 /************************************************************************/
 
 /* Is this page index aligned to N bits? */
@@ -99,7 +113,8 @@ static inline int align_eq(dhara_page_t a, dhara_page_t b,
  */
 static int choose_ppc(int log2_page_size, int max)
 {
-	const int max_meta = (1 << log2_page_size) - DHARA_HEADER_SIZE;
+	const int max_meta = (1 << log2_page_size) -
+		DHARA_HEADER_SIZE - DHARA_COOKIE_SIZE;
 	int total_meta = DHARA_META_SIZE;
 	int ppc = 1;
 
@@ -370,7 +385,7 @@ int dhara_journal_resume(struct dhara_journal *j, dhara_error_t *err)
 	j->tail = hdr_get_tail(j->page_buf);
 	j->bb_current = hdr_get_bb_current(j->page_buf);
 	j->bb_last = hdr_get_bb_last(j->page_buf);
-	memset(j->page_buf, 0xff, 1 << j->nand->log2_page_size);
+	hdr_clear_user(j->page_buf, j->nand->log2_page_size);
 
 	/* Perform another linear scan to find the next free user page */
 	if (find_head(j, last_group, err) < 0) {
@@ -422,8 +437,7 @@ int dhara_journal_read_meta(struct dhara_journal *j, dhara_page_t p,
 {
 	/* Offset of metadata within the metadata page */
 	const dhara_page_t ppc_mask = (1 << j->log2_ppc) - 1;
-	const size_t offset = (p & ppc_mask) * DHARA_META_SIZE +
-		DHARA_HEADER_SIZE;
+	const size_t offset = hdr_user_offset(p & ppc_mask);
 
 	/* Special case: buffered metadata */
 	if (align_eq(p, j->head, j->log2_ppc)) {
@@ -525,8 +539,7 @@ static int dump_meta(struct dhara_journal *j, dhara_error_t *err)
 				      j->page_buf, &my_err))) {
 			j->recover_meta = j->head;
 			j->head++;
-			memset(j->page_buf, 0xff,
-			       1 << j->nand->log2_page_size);
+			hdr_clear_user(j->page_buf, j->nand->log2_page_size);
 			return 0;
 		}
 
@@ -616,8 +629,7 @@ static int push_meta(struct dhara_journal *j, const uint8_t *meta,
 	const dhara_page_t old_head = j->head;
 	dhara_error_t my_err;
 	const size_t offset =
-		(j->head & ((1 << j->log2_ppc) - 1)) * DHARA_META_SIZE +
-		DHARA_HEADER_SIZE;
+		hdr_user_offset(j->head & ((1 << j->log2_ppc) - 1));
 
 	/* We've just written a user page. Add the metadata to the
 	 * buffer.
@@ -644,7 +656,7 @@ static int push_meta(struct dhara_journal *j, const uint8_t *meta,
 	if (dhara_nand_prog(j->nand, j->head, j->page_buf, &my_err) < 0)
 		return recover_from(j, my_err, err);
 
-	memset(j->page_buf, 0xff, j->nand->log2_page_size);
+	hdr_clear_user(j->page_buf, j->nand->log2_page_size);
 
 	/* Find the next free page */
 	if (is_aligned(j->head + 1, j->nand->log2_ppb)) {
