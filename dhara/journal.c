@@ -92,7 +92,9 @@ static inline size_t hdr_user_offset(uint8_t which)
 		which * DHARA_META_SIZE;
 }
 
-/************************************************************************/
+/************************************************************************
+ * Page geometry helpers
+ */
 
 /* Is this page index aligned to N bits? */
 static inline int is_aligned(dhara_page_t p, int n)
@@ -105,6 +107,29 @@ static inline int align_eq(dhara_page_t a, dhara_page_t b,
 			   int n)
 {
 	return !((a ^ b) >> n);
+}
+
+/* What is the successor of this block? */
+static dhara_block_t next_block(const struct dhara_nand *n, dhara_block_t blk)
+{
+	blk++;
+	if (blk >= n->num_blocks)
+		blk = 0;
+
+	return blk;
+}
+
+static dhara_page_t next_upage(const struct dhara_journal *j,
+			       dhara_page_t p)
+{
+	p++;
+	if (is_aligned(p + 1, j->log2_ppc))
+		p++;
+
+	if (p >= (j->nand->num_blocks << j->nand->log2_ppb))
+		p = 0;
+
+	return p;
 }
 
 /* Calculate a checkpoint period: the largest value of ppc such that
@@ -130,6 +155,10 @@ static int choose_ppc(int log2_page_size, int max)
 
 	return ppc;
 }
+
+/************************************************************************
+ * Journal setup/resume
+ */
 
 /* Clear recovery status */
 static void clear_recovery(struct dhara_journal *j)
@@ -160,41 +189,6 @@ static void reset_journal(struct dhara_journal *j)
 
 	/* Empty metadata buffer */
 	memset(j->page_buf, 0xff, 1 << j->nand->log2_page_size);
-}
-
-int advance_head_block(struct dhara_journal *j, dhara_error_t *err)
-{
-	dhara_block_t blk = j->head >> j->nand->log2_ppb;
-	dhara_block_t bad_cur = j->bb_current;
-	dhara_block_t bad_last = j->bb_last;
-	uint8_t e = j->epoch;
-	int i;
-
-	for (i = 0; i < DHARA_MAX_RETRIES; i++) {
-		blk++;
-		if (blk >= j->nand->num_blocks) {
-			blk = 0;
-			e++;
-			bad_last = bad_cur;
-			bad_cur = 0;
-		}
-
-		if (blk == (j->tail >> j->nand->log2_ppb))
-			break;
-
-		if (!dhara_nand_is_bad(j->nand, blk)) {
-			j->head = blk << j->nand->log2_ppb;
-			j->bb_last = bad_last;
-			j->bb_current = bad_cur;
-			j->epoch = e;
-			return 0;
-		}
-
-		bad_cur++;
-	}
-
-	dhara_set_error(err, DHARA_E_TOO_BAD);
-	return -1;
 }
 
 void dhara_journal_init(struct dhara_journal *j,
@@ -338,18 +332,12 @@ static int find_head(struct dhara_journal *j, dhara_page_t start,
 	j->head = start;
 
 	do {
-		/* Are we on the last user-page? If so, find the next
-		 * free block.
-		 */
-		if (is_aligned(j->head + 2, j->nand->log2_ppb))
-			return advance_head_block(j, err);
+		/* Skip to the next userpage */
+		j->head = next_upage(j, j->head);
 
-		/* Otherwise, skip to the next free userpage and try
-		 * again.
-		 */
-		j->head++;
-		if (is_aligned(j->head + 1, j->log2_ppc))
-			j->head++;
+		/* If we hit the end of the block, we're done */
+		if (is_aligned(j->head, j->nand->log2_ppb))
+			return 0;
 	} while (!dhara_nand_is_free(j->nand, j->head));
 
 	return 0;
@@ -432,16 +420,6 @@ dhara_page_t dhara_journal_size(const struct dhara_journal *j)
 	return num_pages - num_cps;
 }
 
-static int check_size(const struct dhara_journal *j, dhara_error_t *err)
-{
-	if (dhara_journal_size(j) >= dhara_journal_capacity(j)) {
-		dhara_set_error(err, DHARA_E_JOURNAL_FULL);
-		return -1;
-	}
-
-	return 0;
-}
-
 int dhara_journal_read_meta(struct dhara_journal *j, dhara_page_t p,
 			    uint8_t *buf, dhara_error_t *err)
 {
@@ -470,44 +448,35 @@ int dhara_journal_read_meta(struct dhara_journal *j, dhara_page_t p,
 			       buf, err);
 }
 
-int dhara_journal_dequeue(struct dhara_journal *j, dhara_error_t *err)
+dhara_page_t dhara_journal_peek(struct dhara_journal *j)
 {
-	dhara_page_t t = j->tail;
+	if (j->head == j->tail)
+		return DHARA_PAGE_NONE;
 
-	if (t == j->head)
-		return 0;
-
-	/* Advance to the next user page (skip metadata pages) */
-	t++;
-	if (is_aligned(t + 1, j->log2_ppc))
-		t++;
-
-	/* Did we cross a block boundary? */
-	if (is_aligned(t, j->nand->log2_ppb)) {
+	if (is_aligned(j->tail, j->nand->log2_ppb)) {
 		dhara_block_t blk = j->tail >> j->nand->log2_ppb;
 		int i;
 
 		for (i = 0; i < DHARA_MAX_RETRIES; i++) {
-			if (blk == (j->head >> j->nand->log2_ppb))
-				break;
-
-			blk++;
-			if (blk >= j->nand->num_blocks)
-				blk = 0;
-
-			if (!dhara_nand_is_bad(j->nand, blk)) {
+			if ((blk == (j->head >> j->nand->log2_ppb)) ||
+			    !dhara_nand_is_bad(j->nand, blk)) {
 				j->tail = blk << j->nand->log2_ppb;
-				return 0;
+				return j->tail;
 			}
-		}
 
-		dhara_set_error(err, DHARA_E_TOO_BAD);
-		return -1;
-	} else {
-		j->tail = t;
+			blk = next_block(j->nand, blk);
+		}
 	}
 
-	return 0;
+	return j->tail;
+}
+
+void dhara_journal_dequeue(struct dhara_journal *j)
+{
+	if (j->head == j->tail)
+		return;
+
+	j->tail = next_upage(j, j->tail);
 }
 
 void dhara_journal_clear(struct dhara_journal *j)
@@ -516,6 +485,64 @@ void dhara_journal_clear(struct dhara_journal *j)
 	j->root = DHARA_PAGE_NONE;
 
 	hdr_clear_user(j->page_buf, j->nand->log2_page_size);
+}
+
+static void roll_stats(struct dhara_journal *j)
+{
+	j->bb_last = j->bb_current;
+	j->bb_current = 0;
+	j->epoch++;
+}
+
+static int skip_block(struct dhara_journal *j, dhara_error_t *err)
+{
+	const dhara_block_t next = next_block(j->nand,
+		j->head >> j->nand->log2_ppb);
+
+	/* We can't roll onto the same block as the tail */
+	if ((j->tail >> j->nand->log2_ppb) == next) {
+		dhara_set_error(err, DHARA_E_JOURNAL_FULL);
+		return -1;
+	}
+
+	j->head = next << j->nand->log2_ppb;
+	if (!j->head)
+		roll_stats(j);
+
+	return 0;
+}
+
+/* Make sure the head pointer is on a ready-to-program page. */
+static int prepare_head(struct dhara_journal *j, dhara_error_t *err)
+{
+	const dhara_page_t next = next_upage(j, j->head);
+	int i;
+
+	/* We can't write if doing so would cause the head pointer to
+	 * roll onto the same block as the tail.
+	 */
+	if (align_eq(next, j->tail, j->nand->log2_ppb) &&
+	    !align_eq(next, j->head, j->nand->log2_ppb)) {
+		dhara_set_error(err, DHARA_E_JOURNAL_FULL);
+		return -1;
+	}
+
+	if (!is_aligned(j->head, j->nand->log2_ppb))
+		return 0;
+
+	for (i = 0; i < DHARA_MAX_RETRIES; i++) {
+		const dhara_block_t blk = j->head >> j->nand->log2_ppb;
+
+		if (!dhara_nand_is_bad(j->nand, blk))
+			return dhara_nand_erase(j->nand, blk, err);
+
+		j->bb_current++;
+		if (skip_block(j, err) < 0)
+			return -1;
+	}
+
+	dhara_set_error(err, DHARA_E_TOO_BAD);
+	return -1;
 }
 
 static void restart_recovery(struct dhara_journal *j, dhara_page_t old_head)
@@ -548,15 +575,14 @@ static int dump_meta(struct dhara_journal *j, dhara_error_t *err)
 	 * have buffered metadata from the failed block.
 	 */
 	for (i = 0; i < DHARA_MAX_RETRIES; i++) {
-		const dhara_block_t head_blk = j->head >> j->nand->log2_ppb;
 		dhara_error_t my_err;
 
 		/* Try to dump metadata on this page */
-		if (!(dhara_nand_erase(j->nand, head_blk, &my_err) ||
+		if (!(prepare_head(j, &my_err) ||
 		      dhara_nand_prog(j->nand, j->head,
 				      j->page_buf, &my_err))) {
 			j->recover_meta = j->head;
-			j->head++;
+			j->head = next_upage(j, j->head);
 			hdr_clear_user(j->page_buf, j->nand->log2_page_size);
 			return 0;
 		}
@@ -567,35 +593,15 @@ static int dump_meta(struct dhara_journal *j, dhara_error_t *err)
 			return -1;
 		}
 
-		/* If the block went bad, try again on the next block */
-		if (advance_head_block(j, err) < 0)
-			return -1;
+		j->bb_current++;
+		dhara_nand_mark_bad(j->nand, j->head >> j->nand->log2_ppb);
 
-		dhara_nand_mark_bad(j->nand, head_blk);
+		if (skip_block(j, err) < 0)
+			return -1;
 	}
 
 	dhara_set_error(err, DHARA_E_TOO_BAD);
 	return -1;
-}
-
-static void recover_tail_fixup(struct dhara_journal *j, dhara_page_t bad_page)
-{
-	dhara_block_t blk = j->tail >> j->nand->log2_ppb;
-	int i;
-
-	if (!align_eq(j->tail, bad_page, j->nand->log2_ppb))
-		return;
-
-	for (i = 0; i < DHARA_MAX_RETRIES; i++) {
-		blk++;
-		if (blk >= j->nand->num_blocks)
-			blk = 0;
-
-		if (!dhara_nand_is_bad(j->nand, blk)) {
-			j->tail = blk << j->nand->log2_ppb;
-			break;
-		}
-	}
 }
 
 static int recover_from(struct dhara_journal *j,
@@ -609,8 +615,9 @@ static int recover_from(struct dhara_journal *j,
 		return -1;
 	}
 
-	/* Find the next available block */
-	if (advance_head_block(j, err) < 0)
+	/* Advance to the next free page */
+	j->bb_current++;
+	if (skip_block(j, err) < 0)
 		return -1;
 
 	/* Are we already in the middle of a recovery? */
@@ -623,7 +630,6 @@ static int recover_from(struct dhara_journal *j,
 	/* Were we block aligned? No recovery required! */
 	if (is_aligned(old_head, j->nand->log2_ppb)) {
 		dhara_nand_mark_bad(j->nand, old_head >> j->nand->log2_ppb);
-		recover_tail_fixup(j, old_head);
 		return 0;
 	}
 
@@ -652,13 +658,12 @@ static int push_meta(struct dhara_journal *j, const uint8_t *meta,
 	/* We've just written a user page. Add the metadata to the
 	 * buffer.
 	 */
-	j->head++;
-
 	memcpy(j->page_buf + offset, meta, DHARA_META_SIZE);
 
 	/* Unless we've filled the buffer, don't do any IO */
-	if (!is_aligned(j->head + 1, j->log2_ppc)) {
-		j->root = old_head;
+	if (!is_aligned(j->head + 2, j->log2_ppc)) {
+		j->root = j->head;
+		j->head++;
 		return 0;
 	}
 
@@ -671,37 +676,16 @@ static int push_meta(struct dhara_journal *j, const uint8_t *meta,
 	hdr_set_bb_current(j->page_buf, j->bb_current);
 	hdr_set_bb_last(j->page_buf, j->bb_last);
 
-	if (dhara_nand_prog(j->nand, j->head, j->page_buf, &my_err) < 0)
+	if (dhara_nand_prog(j->nand, j->head + 1, j->page_buf, &my_err) < 0)
 		return recover_from(j, my_err, err);
 
-	hdr_clear_user(j->page_buf, j->nand->log2_page_size);
-
-	/* Find the next free page */
-	if (is_aligned(j->head + 1, j->nand->log2_ppb)) {
-		if (advance_head_block(j, err) < 0) {
-			j->head = old_head;
-			return -1;
-		}
-	} else {
-		j->head++;
-	}
-
 	j->root = old_head;
+	j->head = next_upage(j, j->head);
+
+	if (!j->head)
+		roll_stats(j);
+
 	return 0;
-}
-
-static int prepare_prog(const struct dhara_nand *n, dhara_page_t head,
-			dhara_page_t tail, dhara_error_t *err)
-{
-	if (!is_aligned(head, n->log2_ppb))
-		return 0;
-
-	if ((head < tail) && align_eq(head, tail, n->log2_ppb)) {
-		dhara_set_error(err, DHARA_E_JOURNAL_FULL);
-		return -1;
-	}
-
-	return dhara_nand_erase(n, head >> n->log2_ppb, err);
 }
 
 int dhara_journal_enqueue(struct dhara_journal *j,
@@ -711,11 +695,8 @@ int dhara_journal_enqueue(struct dhara_journal *j,
 	dhara_error_t my_err;
 	int i;
 
-	if (check_size(j, err) < 0)
-		return -1;
-
 	for (i = 0; i < DHARA_MAX_RETRIES; i++) {
-		if (!(prepare_prog(j->nand, j->head, j->tail, &my_err) ||
+		if (!(prepare_head(j, &my_err) ||
 		      dhara_nand_prog(j->nand, j->head, data, &my_err)))
 			return push_meta(j, meta, err);
 
@@ -734,11 +715,8 @@ int dhara_journal_copy(struct dhara_journal *j,
 	dhara_error_t my_err;
 	int i;
 
-	if (check_size(j, err) < 0)
-		return -1;
-
 	for (i = 0; i < DHARA_MAX_RETRIES; i++) {
-		if (!(prepare_prog(j->nand, j->head, j->tail, &my_err) ||
+		if (!(prepare_head(j, &my_err) ||
 		      dhara_nand_copy(j->nand, p, j->head, &my_err)))
 			return push_meta(j, meta, err);
 
@@ -777,7 +755,6 @@ void dhara_journal_ack_recoverable(struct dhara_journal *j)
 				j->recover_meta >> j->nand->log2_ppb);
 
 		/* Was the tail on this page? Skip it forward */
-		recover_tail_fixup(j, j->recover_root);
 		clear_recovery(j);
 	} else {
 		/* Skip to next user page */

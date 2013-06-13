@@ -26,7 +26,7 @@
 static void suspend_resume(struct dhara_journal *j)
 {
 	const dhara_page_t old_root = dhara_journal_root(j);
-	const dhara_page_t old_tail = dhara_journal_tail(j);
+	const dhara_page_t old_tail = j->tail;
 	const dhara_page_t old_head = j->head;
 	dhara_error_t err;
 
@@ -38,7 +38,7 @@ static void suspend_resume(struct dhara_journal *j)
 		dabort("resume", err);
 
 	assert(old_root == dhara_journal_root(j));
-	assert(old_tail == dhara_journal_tail(j));
+	assert(old_tail == j->tail);
 	assert(old_head == j->head);
 }
 

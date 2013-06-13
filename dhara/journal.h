@@ -154,11 +154,6 @@ static inline dhara_page_t dhara_journal_root(const struct dhara_journal *j)
 	return j->root;
 }
 
-static inline dhara_page_t dhara_journal_tail(const struct dhara_journal *j)
-{
-	return j->tail;
-}
-
 /* Read metadata associated with a page. This assumes that the page
  * provided is a valid data page. The actual page data is read via the
  * normal NAND interface.
@@ -166,10 +161,15 @@ static inline dhara_page_t dhara_journal_tail(const struct dhara_journal *j)
 int dhara_journal_read_meta(struct dhara_journal *j, dhara_page_t p,
 			    uint8_t *buf, dhara_error_t *err);
 
+/* Advance the tail to the next non-bad block and return the page that's
+ * ready to read. If no page is ready, return DHARA_PAGE_NONE.
+ */
+dhara_page_t dhara_journal_peek(struct dhara_journal *j);
+
 /* Remove the last page from the journal. This doesn't take permanent
  * effect until the next checkpoint.
  */
-int dhara_journal_dequeue(struct dhara_journal *j, dhara_error_t *err);
+void dhara_journal_dequeue(struct dhara_journal *j);
 
 /* Remove all pages form the journal. This doesn't take permanent effect
  * until the next checkpoint.

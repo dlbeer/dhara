@@ -85,9 +85,11 @@ uint32_t jt_dequeue(struct dhara_journal *j, int expect)
 	const int page_size = 1 << j->nand->log2_page_size;
 	uint8_t r[page_size];
 	uint8_t meta[DHARA_META_SIZE];
-	const dhara_page_t tail = dhara_journal_tail(j);
+	const dhara_page_t tail = dhara_journal_peek(j);
 	uint32_t seed;
 	dhara_error_t err;
+
+	assert(tail != DHARA_PAGE_NONE);
 
 	if (dhara_journal_read_meta(j, tail, meta, &err) < 0)
 		dabort("read_meta", err);
@@ -102,8 +104,6 @@ uint32_t jt_dequeue(struct dhara_journal *j, int expect)
 	if (seed != 0xffffffff)
 		seq_assert(seed, r, page_size);
 
-	if (dhara_journal_dequeue(j, &err) < 0)
-		dabort("dequeue", err);
-
+	dhara_journal_dequeue(j);
 	return seed;
 }
