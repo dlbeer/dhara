@@ -23,9 +23,6 @@ static void run(const char *name, void (*scen)(void))
 {
 	uint8_t page_buf[1 << sim_nand.log2_page_size];
 	struct dhara_journal journal;
-	int garbage_count = 0;
-	int next = 0;
-	int i;
 
 	printf("========================================"
 	       "================================\n"
@@ -41,22 +38,8 @@ static void run(const char *name, void (*scen)(void))
 
 	scen();
 
-	for (i = 0; i < 30; i++)
-		jt_enqueue(&journal, i);
-
-	while (next < 30) {
-		uint32_t seed = jt_dequeue(&journal, -1);
-
-		if (seed == 0xffffffff) {
-			garbage_count++;
-			assert(garbage_count < 4);
-		} else {
-			garbage_count = 0;
-
-			assert(seed == next);
-			next++;
-		}
-	}
+	jt_enqueue_sequence(&journal, 0, 30);
+	jt_dequeue_sequence(&journal, 0, 30);
 
 	sim_dump();
 	printf("\n");

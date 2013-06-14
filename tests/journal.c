@@ -56,7 +56,6 @@ int main(void)
 	struct dhara_journal journal;
 	const size_t page_size = 1 << sim_nand.log2_page_size;
 	uint8_t page_buf[page_size];
-	int i;
 	int rep;
 
 	sim_reset();
@@ -69,11 +68,13 @@ int main(void)
 
 	printf("Enqueue/dequeue, 100 pages x20\n");
 	for (rep = 0; rep < 20; rep++) {
-		for (i = 0; i < 100; i++)
-			jt_enqueue(&journal, i);
+		int count;
+
+		count = jt_enqueue_sequence(&journal, 0, 100);
+		assert(count == 100);
+
 		printf("    size     = %d -> ", dhara_journal_size(&journal));
-		for (i = 0; i < 100; i++)
-			jt_dequeue(&journal, i);
+		jt_dequeue_sequence(&journal, 0, count);
 		printf("%d\n", dhara_journal_size(&journal));
 	}
 	printf("\n");
@@ -85,20 +86,22 @@ int main(void)
 	printf("Enqueue/dequeue, ~100 pages x20 (resume)\n");
 	for (rep = 0; rep < 20; rep++) {
 		uint8_t *cookie = dhara_journal_cookie(&journal);
-		int j;
+		int count;
 
 		cookie[0] = rep;
-		for (i = 0; i < 100; i++)
-			jt_enqueue(&journal, i);
+		count = jt_enqueue_sequence(&journal, 0, 100);
+		assert(count == 100);
 
-		while (!dhara_journal_is_checkpointed(&journal))
-			jt_enqueue(&journal, i++);
+		while (!dhara_journal_is_checkpointed(&journal)) {
+			const int c = jt_enqueue_sequence(&journal,
+				count++, 1);
+
+			assert(c == 1);
+		}
 
 		printf("    size     = %d -> ", dhara_journal_size(&journal));
 		suspend_resume(&journal);
-
-		for (j = 0; j < i; j++)
-			jt_dequeue(&journal, j);
+		jt_dequeue_sequence(&journal, 0, count);
 		printf("%d\n", dhara_journal_size(&journal));
 
 		assert(cookie[0] == rep);

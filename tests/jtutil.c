@@ -16,9 +16,41 @@
 
 #include <stdio.h>
 #include <assert.h>
+#include <stdlib.h>
 #include "dhara/bytes.h"
 #include "util.h"
 #include "jtutil.h"
+
+static void check_upage(const struct dhara_journal *j, dhara_page_t p)
+{
+	const dhara_page_t mask = (1 << j->log2_ppc) - 1;
+
+	assert((~p) & mask);
+	assert(p < (j->nand->num_blocks << j->nand->log2_ppb));
+}
+
+void jt_check(struct dhara_journal *j)
+{
+	/* Head and tail pointers always point to a valid user-page
+	 * index (never a meta-page, and never out-of-bounds).
+	 */
+	check_upage(j, j->head);
+	check_upage(j, j->tail);
+
+	/* The head never advances forward onto the same block as the
+	 * tail.
+	 */
+	if (!((j->head ^ j->tail) >> j->nand->log2_ppb)) {
+		assert(j->head >= j->tail);
+	}
+
+	/* The root always points to a valid user page in a non-empty
+	 * journal.
+	 */
+	if (j->head != j->tail) {
+		check_upage(j, j->root);
+	}
+}
 
 static void recover(struct dhara_journal *j)
 {
@@ -34,6 +66,7 @@ static void recover(struct dhara_journal *j)
 		if (dhara_journal_read_meta(j, p, meta, &err) < 0)
 			dabort("read_meta", err);
 
+		jt_check(j);
 		if (dhara_journal_copy(j, p, meta, &err) < 0) {
 			if (err == DHARA_E_RECOVER) {
 				printf("    recover: restart\n");
@@ -45,65 +78,113 @@ static void recover(struct dhara_journal *j)
 			dabort("copy", err);
 		}
 
+		jt_check(j);
 		dhara_journal_ack_recoverable(j);
 	}
 
+	jt_check(j);
 	printf("    recover: complete\n");
 }
 
-void jt_enqueue(struct dhara_journal *j, int i)
+static int enqueue(struct dhara_journal *j, uint32_t id, dhara_error_t *err)
 {
 	const int page_size = 1 << j->nand->log2_page_size;
 	uint8_t r[page_size];
 	uint8_t meta[DHARA_META_SIZE];
-	dhara_error_t err;
-	int retry_count = 0;
+	dhara_error_t my_err;
+	int i;
 
-	seq_gen(i, r, page_size);
-	dhara_w32(meta, i);
+	seq_gen(id, r, page_size);
+	dhara_w32(meta, id);
 
-retry:
-	if (dhara_journal_enqueue(j, r, meta, &err) < 0) {
-		if (err == DHARA_E_RECOVER) {
-			recover(j);
-			if (++retry_count >= DHARA_MAX_RETRIES)
-				dabort("recover", DHARA_E_TOO_BAD);
-			goto retry;
+	for (i = 0; i < DHARA_MAX_RETRIES; i++) {
+		jt_check(j);
+		if (!dhara_journal_enqueue(j, r, meta, &my_err))
+			return 0;
+
+		if (my_err != DHARA_E_RECOVER) {
+			dhara_set_error(err, my_err);
+			return -1;
 		}
 
-		dabort("enqueue", err);
+		recover(j);
 	}
 
-	if (dhara_journal_read_meta(j, dhara_journal_root(j), meta, &err) < 0)
-		dabort("read_meta", err);
-
-	assert(dhara_r32(meta) == i);
+	dhara_set_error(err, DHARA_E_TOO_BAD);
+	return -1;
 }
 
-uint32_t jt_dequeue(struct dhara_journal *j, int expect)
+int jt_enqueue_sequence(struct dhara_journal *j, int start, int count)
 {
-	const int page_size = 1 << j->nand->log2_page_size;
-	uint8_t r[page_size];
-	uint8_t meta[DHARA_META_SIZE];
-	const dhara_page_t tail = dhara_journal_peek(j);
-	uint32_t seed;
-	dhara_error_t err;
+	const int init_size = dhara_journal_size(j);
+	int i;
 
-	assert(tail != DHARA_PAGE_NONE);
+	if (count < 0)
+		count = j->nand->num_blocks << j->nand->log2_ppb;
 
-	if (dhara_journal_read_meta(j, tail, meta, &err) < 0)
-		dabort("read_meta", err);
+	for (i = 0; i < count; i++) {
+		uint8_t meta[DHARA_META_SIZE];
+		dhara_page_t root;
+		dhara_error_t err;
 
-	seed = dhara_r32(meta);
-	assert((expect < 0) || (expect == seed));
+		if (enqueue(j, start + i, &err) < 0) {
+			if (err == DHARA_E_JOURNAL_FULL)
+				return i;
 
-	if (dhara_nand_read(j->nand, tail, 0, page_size, r,
-			    &err) < 0)
-		dabort("NAND_read", err);
+			dabort("enqueue", err);
+		}
 
-	if (seed != 0xffffffff)
-		seq_assert(seed, r, page_size);
+		assert(dhara_journal_size(j) >= init_size + i);
+		root = dhara_journal_root(j);
 
-	dhara_journal_dequeue(j);
-	return seed;
+		if (dhara_journal_read_meta(j, j->root, meta, &err) < 0)
+			dabort("read_meta", err);
+		assert(dhara_r32(meta) == start + i);
+	}
+
+	return count;
+}
+
+void jt_dequeue_sequence(struct dhara_journal *j, int next, int count)
+{
+	const int max_garbage = 1 << j->log2_ppc;
+	int garbage_count = 0;
+
+	while (count > 0) {
+		uint8_t meta[DHARA_META_SIZE];
+		uint32_t id;
+		dhara_page_t tail = dhara_journal_peek(j);
+		dhara_error_t err;
+
+		assert(tail != DHARA_PAGE_NONE);
+
+		jt_check(j);
+		if (dhara_journal_read_meta(j, tail, meta, &err) < 0)
+			dabort("read_meta", err);
+
+		jt_check(j);
+		dhara_journal_dequeue(j);
+		id = dhara_r32(meta);
+
+		if (id == 0xffffffff) {
+			garbage_count++;
+			assert(garbage_count < max_garbage);
+		} else {
+			const int page_size = 1 << j->nand->log2_page_size;
+			uint8_t r[page_size];
+
+			assert(id == next);
+			garbage_count = 0;
+			next++;
+			count--;
+
+			if (dhara_nand_read(j->nand, tail, 0,
+					    page_size, r, &err) < 0)
+				dabort("nand_read", err);
+
+			seq_assert(id, r, page_size);
+		}
+	}
+
+	jt_check(j);
 }

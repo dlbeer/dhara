@@ -19,8 +19,19 @@
 
 #include "dhara/journal.h"
 
-/* Enqueue/dequeue seed/sequence pairs */
-void jt_enqueue(struct dhara_journal *j, int i);
-uint32_t jt_dequeue(struct dhara_journal *j, int expect);
+/* Check the journal's invariants */
+void jt_check(struct dhara_journal *j);
+
+/* Try to enqueue a sequence of seed/payload pages, and return the
+ * number successfully enqueued. Recovery is handled automatically, and
+ * all other errors except E_JOURNAL_FULL are fatal.
+ */
+int jt_enqueue_sequence(struct dhara_journal *j, int start, int count);
+
+/* Dequeue a sequence of seed/payload pages. Make sure there's not too
+ * much garbage, and that we get the non-garbage pages in the expected
+ * order.
+ */
+void jt_dequeue_sequence(struct dhara_journal *j, int start, int count);
 
 #endif

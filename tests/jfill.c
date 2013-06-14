@@ -24,33 +24,6 @@
 #include "util.h"
 #include "jtutil.h"
 
-static int fill_journal(struct dhara_journal *j)
-{
-	const size_t page_size = 1 << sim_nand.log2_page_size;
-	const int max_pages = j->nand->num_blocks << j->nand->log2_ppb;
-	int count = 0;
-
-	for (;;) {
-		uint8_t meta[DHARA_META_SIZE];
-		uint8_t my_page[page_size];
-		dhara_error_t err;
-
-		seq_gen(count, my_page, page_size);
-		dhara_w32(meta, count);
-
-		if (dhara_journal_enqueue(j, my_page, meta, &err) < 0) {
-			printf("    error after %d pages: %d (%s)\n",
-			       count, err, dhara_strerror(err));
-			break;
-		} else {
-			count++;
-			assert(count < max_pages);
-		}
-	}
-
-	return count;
-}
-
 int main(void)
 {
 	struct dhara_journal journal;
@@ -69,21 +42,20 @@ int main(void)
 
 	for (rep = 0; rep < 5; rep++) {
 		int count;
-		int i;
 
 		printf("Rep: %d\n", rep);
 
 		printf("    shift head...\n");
-		jt_enqueue(&journal, 0xff);
-		jt_dequeue(&journal, 0xff);
+		jt_enqueue_sequence(&journal, 0xff, 1);
+		jt_dequeue_sequence(&journal, 0xff, 1);
 
 		printf("    enqueue until error...\n");
-		count = fill_journal(&journal);
+		count = jt_enqueue_sequence(&journal, 0, -1);
+		printf("    enqueue count: %d\n", count);
 		printf("    size: %d\n", dhara_journal_size(&journal));
 
 		printf("    dequeue...\n");
-		for (i = 0; i < count; i++)
-			jt_dequeue(&journal, i);
+		jt_dequeue_sequence(&journal, 0, count);
 		printf("    size: %d\n", dhara_journal_size(&journal));
 	}
 
