@@ -47,6 +47,7 @@
 
 /* State flags */
 #define DHARA_JOURNAL_F_DIRTY		0x01
+#define DHARA_JOURNAL_F_BAD_META	0x02
 
 /* The journal layer presents the NAND pages as a double-ended queue.
  * Pages, with associated metadata may be pushed onto the end of the
@@ -107,13 +108,12 @@ struct dhara_journal {
 	 *
 	 * If we had buffered metadata before recovery started, it will
 	 * have been dumped to a free page, indicated by recover_meta.
-	 * recover_start indicates the first free page used when the
-	 * successful recovery started.
+	 * If this block later goes bad, we will have to defer bad-block
+	 * marking until recovery is complete (F_BAD_META).
 	 */
 	dhara_page_t			recover_next;
 	dhara_page_t			recover_root;
 	dhara_page_t			recover_meta;
-	dhara_page_t			recover_start;
 };
 
 /* Initialize a journal. You must supply a pointer to a NAND chip

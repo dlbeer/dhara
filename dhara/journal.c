@@ -166,7 +166,6 @@ static void clear_recovery(struct dhara_journal *j)
 	j->recover_next = DHARA_PAGE_NONE;
 	j->recover_root = DHARA_PAGE_NONE;
 	j->recover_meta = DHARA_PAGE_NONE;
-	j->recover_start = DHARA_PAGE_NONE;
 }
 
 /* Set up an empty journal */
@@ -184,6 +183,7 @@ static void reset_journal(struct dhara_journal *j)
 	/* Empty journal */
 	j->head = 0;
 	j->tail = 0;
+	j->tail_sync = 0;
 	j->root = DHARA_PAGE_NONE;
 
 	/* No recovery required */
@@ -586,13 +586,14 @@ static void restart_recovery(struct dhara_journal *j, dhara_page_t old_head)
 	if ((j->recover_meta == DHARA_PAGE_NONE) ||
 	    !align_eq(j->recover_meta, old_head, j->nand->log2_ppb))
 		dhara_nand_mark_bad(j->nand, old_head >> j->nand->log2_ppb);
+	else
+		j->flags |= DHARA_JOURNAL_F_BAD_META;
 
 	/* Start recovery again. Reset the source enumeration to
 	 * the start of the original bad block, and reset the
 	 * destination enumeration to the newly found good
 	 * block.
 	 */
-	j->recover_start = j->head;
 	j->recover_next =
 		j->recover_root & ~((1 << j->nand->log2_ppb) - 1);
 
@@ -674,7 +675,6 @@ static int recover_from(struct dhara_journal *j,
 	    dump_meta(j, err) < 0)
 		return -1;
 
-	j->recover_start = j->head;
 	dhara_set_error(err, DHARA_E_RECOVER);
 	return -1;
 }
@@ -778,11 +778,11 @@ void dhara_journal_ack_recoverable(struct dhara_journal *j)
 		/* If we had to dump metadata, and the page on which we
 		 * did this also went bad, mark it bad too.
 		 */
-		if ((j->recover_meta != DHARA_PAGE_NONE) &&
-		    !align_eq(j->recover_start, j->recover_meta,
-			      j->nand->log2_ppb))
+		if (j->flags & DHARA_JOURNAL_F_BAD_META) {
 			dhara_nand_mark_bad(j->nand,
 				j->recover_meta >> j->nand->log2_ppb);
+			j->flags &= ~DHARA_JOURNAL_F_BAD_META;
+		}
 
 		/* Was the tail on this page? Skip it forward */
 		clear_recovery(j);
