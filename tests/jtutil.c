@@ -48,7 +48,13 @@ void jt_check(struct dhara_journal *j)
 	 * journal.
 	 */
 	if (j->head != j->tail) {
+		const dhara_page_t raw_size = j->head - j->tail;
+		const dhara_page_t root_offset = j->root - j->tail;
+
 		check_upage(j, j->root);
+		assert(root_offset < raw_size);
+	} else {
+		assert(j->root == DHARA_PAGE_NONE);
 	}
 }
 

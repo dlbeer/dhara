@@ -385,6 +385,10 @@ int dhara_journal_resume(struct dhara_journal *j, dhara_error_t *err)
 	return 0;
 }
 
+/**************************************************************************
+ * Public interface
+ */
+
 dhara_page_t dhara_journal_capacity(const struct dhara_journal *j)
 {
 	const dhara_block_t max_bad = j->bb_last > j->bb_current ?
@@ -461,6 +465,10 @@ dhara_page_t dhara_journal_peek(struct dhara_journal *j)
 			if ((blk == (j->head >> j->nand->log2_ppb)) ||
 			    !dhara_nand_is_bad(j->nand, blk)) {
 				j->tail = blk << j->nand->log2_ppb;
+
+				if (j->tail == j->head)
+					j->root = DHARA_PAGE_NONE;
+
 				return j->tail;
 			}
 
@@ -477,6 +485,9 @@ void dhara_journal_dequeue(struct dhara_journal *j)
 		return;
 
 	j->tail = next_upage(j, j->tail);
+
+	if (j->head == j->tail)
+		j->root = DHARA_PAGE_NONE;
 }
 
 void dhara_journal_clear(struct dhara_journal *j)
