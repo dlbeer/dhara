@@ -72,14 +72,25 @@ static void recover(struct dhara_journal *j)
 
 	while (dhara_journal_in_recovery(j)) {
 		const dhara_page_t p = dhara_journal_next_recoverable(j);
-		uint8_t meta[DHARA_META_SIZE];
 		dhara_error_t err;
-
-		if (dhara_journal_read_meta(j, p, meta, &err) < 0)
-			dabort("read_meta", err);
+		int ret;
 
 		jt_check(j);
-		if (dhara_journal_copy(j, p, meta, &err) < 0) {
+
+		if (p == DHARA_PAGE_NONE) {
+			ret = dhara_journal_enqueue(j, NULL, NULL, &err);
+		} else {
+			uint8_t meta[DHARA_META_SIZE];
+
+			if (dhara_journal_read_meta(j, p, meta, &err) < 0)
+				dabort("read_meta", err);
+
+			ret = dhara_journal_copy(j, p, meta, &err);
+		}
+
+		jt_check(j);
+
+		if (ret < 0) {
 			if (err == DHARA_E_RECOVER) {
 				printf("    recover: restart\n");
 				if (++retry_count >= DHARA_MAX_RETRIES)
@@ -89,9 +100,6 @@ static void recover(struct dhara_journal *j)
 
 			dabort("copy", err);
 		}
-
-		jt_check(j);
-		dhara_journal_ack_recoverable(j);
 	}
 
 	jt_check(j);

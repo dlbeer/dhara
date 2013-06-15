@@ -48,6 +48,8 @@
 /* State flags */
 #define DHARA_JOURNAL_F_DIRTY		0x01
 #define DHARA_JOURNAL_F_BAD_META	0x02
+#define DHARA_JOURNAL_F_RECOVERY	0x04
+#define DHARA_JOURNAL_F_ENUM_DONE	0x08
 
 /* The journal layer presents the NAND pages as a double-ended queue.
  * Pages, with associated metadata may be pushed onto the end of the
@@ -229,33 +231,26 @@ static inline int dhara_journal_is_clean(const struct dhara_journal *j)
 	return !(j->flags & DHARA_JOURNAL_F_DIRTY);
 }
 
-/* These two functions comprise the assisted recovery procedure. If an
- * enqueue or copy operation returns an error of E_RECOVER, the journal
- * has been placed into recovery mode.
+/* If an operation returns E_RECOVER, you must begin the recovery
+ * procedure. You must then:
  *
- * Call dhara_journal_next_recoverable() to obtain the user page which
- * needs recovery. Perform whatever operations are necessary to recover
- * the page (usually copy() with updated metadata), and then call
- * dhara_journal_ack_recoverable().
+ *    - call dhara_journal_next_recoverable() to obtain the next block
+ *      to be recovered (if any). If there are no blocks remaining to be
+ *      recovered, DHARA_JOURNAL_PAGE_NONE is returned.
  *
- * If a further E_RECOVER error occurs during recovery, this indicates
- * that recovery needs to be restarted -- DO NOT call ack_recoverable()
- * after receiving this error.
+ *    - proceed to the next checkpoint. Once the journal is clean,
+ *      recovery will finish automatically.
  *
- * Bad-block marking will be performed automatically (after recovering
- * the last user page, and after a recovery failure).
+ * If any operation during recovery fails due to a bad block, E_RECOVER
+ * is returned again, and recovery restarts. Do not add new data to the
+ * journal (rewrites of recovered data are fine) until recovery is
+ * complete.
  */
 static inline int dhara_journal_in_recovery(const struct dhara_journal *j)
 {
-	return j->recover_root != DHARA_PAGE_NONE;
+	return j->flags & DHARA_JOURNAL_F_RECOVERY;
 }
 
-static inline dhara_page_t dhara_journal_next_recoverable
-	(const struct dhara_journal *j)
-{
-	return j->recover_next;
-}
-
-void dhara_journal_ack_recoverable(struct dhara_journal *j);
+dhara_page_t dhara_journal_next_recoverable(struct dhara_journal *j);
 
 #endif

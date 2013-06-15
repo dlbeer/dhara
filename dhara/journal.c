@@ -166,6 +166,9 @@ static void clear_recovery(struct dhara_journal *j)
 	j->recover_next = DHARA_PAGE_NONE;
 	j->recover_root = DHARA_PAGE_NONE;
 	j->recover_meta = DHARA_PAGE_NONE;
+	j->flags &= ~(DHARA_JOURNAL_F_BAD_META |
+		      DHARA_JOURNAL_F_RECOVERY |
+		      DHARA_JOURNAL_F_ENUM_DONE);
 }
 
 /* Set up an empty journal */
@@ -594,6 +597,7 @@ static void restart_recovery(struct dhara_journal *j, dhara_page_t old_head)
 	 * destination enumeration to the newly found good
 	 * block.
 	 */
+	j->flags &= ~DHARA_JOURNAL_F_ENUM_DONE;
 	j->recover_next =
 		j->recover_root & ~((1 << j->nand->log2_ppb) - 1);
 
@@ -654,7 +658,7 @@ static int recover_from(struct dhara_journal *j,
 		return -1;
 
 	/* Are we already in the middle of a recovery? */
-	if (j->recover_root != DHARA_PAGE_NONE) {
+	if (dhara_journal_in_recovery(j)) {
 		restart_recovery(j, old_head);
 		dhara_set_error(err, DHARA_E_RECOVER);
 		return -1;
@@ -675,8 +679,28 @@ static int recover_from(struct dhara_journal *j,
 	    dump_meta(j, err) < 0)
 		return -1;
 
+	j->flags |= DHARA_JOURNAL_F_RECOVERY;
 	dhara_set_error(err, DHARA_E_RECOVER);
 	return -1;
+}
+
+static void finish_recovery(struct dhara_journal *j)
+{
+	/* We just recovered the last page. Mark the recovered
+	 * block as bad.
+	 */
+	dhara_nand_mark_bad(j->nand,
+		j->recover_root >> j->nand->log2_ppb);
+
+	/* If we had to dump metadata, and the page on which we
+	 * did this also went bad, mark it bad too.
+	 */
+	if (j->flags & DHARA_JOURNAL_F_BAD_META)
+		dhara_nand_mark_bad(j->nand,
+			j->recover_meta >> j->nand->log2_ppb);
+
+	/* Was the tail on this page? Skip it forward */
+	clear_recovery(j);
 }
 
 static int push_meta(struct dhara_journal *j, const uint8_t *meta,
@@ -690,7 +714,10 @@ static int push_meta(struct dhara_journal *j, const uint8_t *meta,
 	/* We've just written a user page. Add the metadata to the
 	 * buffer.
 	 */
-	memcpy(j->page_buf + offset, meta, DHARA_META_SIZE);
+	if (meta)
+		memcpy(j->page_buf + offset, meta, DHARA_META_SIZE);
+	else
+		memset(j->page_buf + offset, 0xff, DHARA_META_SIZE);
 
 	/* Unless we've filled the buffer, don't do any IO */
 	if (!is_aligned(j->head + 2, j->log2_ppc)) {
@@ -720,6 +747,9 @@ static int push_meta(struct dhara_journal *j, const uint8_t *meta,
 	if (!j->head)
 		roll_stats(j);
 
+	if (j->flags & DHARA_JOURNAL_F_ENUM_DONE)
+		finish_recovery(j);
+
 	return 0;
 }
 
@@ -732,7 +762,8 @@ int dhara_journal_enqueue(struct dhara_journal *j,
 
 	for (i = 0; i < DHARA_MAX_RETRIES; i++) {
 		if (!(prepare_head(j, &my_err) ||
-		      dhara_nand_prog(j->nand, j->head, data, &my_err)))
+		      (data && dhara_nand_prog(j->nand, j->head, data,
+					       &my_err))))
 			return push_meta(j, meta, err);
 
 		if (recover_from(j, my_err, err) < 0)
@@ -763,33 +794,20 @@ int dhara_journal_copy(struct dhara_journal *j,
 	return -1;
 }
 
-void dhara_journal_ack_recoverable(struct dhara_journal *j)
+dhara_page_t dhara_journal_next_recoverable(struct dhara_journal *j)
 {
+	const dhara_page_t n = j->recover_next;
+
 	if (!dhara_journal_in_recovery(j))
-		return;
+		return DHARA_PAGE_NONE;
 
-	if (j->recover_next == j->recover_root) {
-		/* We just recovered the last page. Mark the recovered
-		 * block as bad.
-		 */
-		dhara_nand_mark_bad(j->nand,
-			j->recover_root >> j->nand->log2_ppb);
+	if (j->flags & DHARA_JOURNAL_F_ENUM_DONE)
+		return DHARA_PAGE_NONE;
 
-		/* If we had to dump metadata, and the page on which we
-		 * did this also went bad, mark it bad too.
-		 */
-		if (j->flags & DHARA_JOURNAL_F_BAD_META) {
-			dhara_nand_mark_bad(j->nand,
-				j->recover_meta >> j->nand->log2_ppb);
-			j->flags &= ~DHARA_JOURNAL_F_BAD_META;
-		}
+	if (j->recover_next == j->recover_root)
+		j->flags |= DHARA_JOURNAL_F_ENUM_DONE;
+	else
+		j->recover_next = next_upage(j, j->recover_next);
 
-		/* Was the tail on this page? Skip it forward */
-		clear_recovery(j);
-	} else {
-		/* Skip to next user page */
-		j->recover_next++;
-		if (is_aligned(j->recover_next + 1, j->log2_ppc))
-			j->recover_next++;
-	}
+	return n;
 }
