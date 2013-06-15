@@ -32,7 +32,6 @@ static void suspend_resume(struct dhara_journal *j)
 
 	dhara_journal_clear(j);
 	assert(dhara_journal_root(j) == DHARA_PAGE_NONE);
-	assert(dhara_journal_size(j) == 0);
 
 	if (dhara_journal_resume(j, &err) < 0)
 		dabort("resume", err);

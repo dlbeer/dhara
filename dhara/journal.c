@@ -388,7 +388,9 @@ int dhara_journal_resume(struct dhara_journal *j, dhara_error_t *err)
 		return -1;
 	}
 
-	j->flags &= ~DHARA_JOURNAL_F_DIRTY;
+	j->flags = 0;
+	j->tail_sync = j->tail;
+
 	clear_recovery(j);
 	return 0;
 }
@@ -418,7 +420,7 @@ dhara_page_t dhara_journal_size(const struct dhara_journal *j)
 	dhara_page_t num_pages = j->head;
 	dhara_page_t num_cps = j->head >> j->log2_ppc;
 
-	if (j->head < j->tail) {
+	if (j->head < j->tail_sync) {
 		const dhara_page_t total_pages =
 			j->nand->num_blocks << j->nand->log2_ppb;
 
@@ -426,8 +428,8 @@ dhara_page_t dhara_journal_size(const struct dhara_journal *j)
 		num_cps += total_pages >> j->log2_ppc;
 	}
 
-	num_pages -= j->tail;
-	num_cps -= j->tail >> j->log2_ppc;
+	num_pages -= j->tail_sync;
+	num_cps -= j->tail_sync >> j->log2_ppc;
 
 	return num_pages - num_cps;
 }
@@ -493,7 +495,12 @@ void dhara_journal_dequeue(struct dhara_journal *j)
 		return;
 
 	j->tail = next_upage(j, j->tail);
-	j->flags |= DHARA_JOURNAL_F_DIRTY;
+
+	/* If the journal is clean at the time of dequeue, then this
+	 * data was always obsolete, and can be reused immediately.
+	 */
+	if (!(j->flags & DHARA_JOURNAL_F_DIRTY))
+		j->tail_sync = j->tail;
 
 	if (j->head == j->tail)
 		j->root = DHARA_PAGE_NONE;
@@ -501,7 +508,10 @@ void dhara_journal_dequeue(struct dhara_journal *j)
 
 void dhara_journal_clear(struct dhara_journal *j)
 {
+	/* If all data is obsolete, we can reuse space immediately. */
 	j->tail = j->head;
+	j->tail_sync = j->head;
+
 	j->root = DHARA_PAGE_NONE;
 	j->flags |= DHARA_JOURNAL_F_DIRTY;
 
@@ -521,7 +531,7 @@ static int skip_block(struct dhara_journal *j, dhara_error_t *err)
 		j->head >> j->nand->log2_ppb);
 
 	/* We can't roll onto the same block as the tail */
-	if ((j->tail >> j->nand->log2_ppb) == next) {
+	if ((j->tail_sync >> j->nand->log2_ppb) == next) {
 		dhara_set_error(err, DHARA_E_JOURNAL_FULL);
 		return -1;
 	}
@@ -540,9 +550,9 @@ static int prepare_head(struct dhara_journal *j, dhara_error_t *err)
 	int i;
 
 	/* We can't write if doing so would cause the head pointer to
-	 * roll onto the same block as the tail.
+	 * roll onto the same block as the last-synced tail.
 	 */
-	if (align_eq(next, j->tail, j->nand->log2_ppb) &&
+	if (align_eq(next, j->tail_sync, j->nand->log2_ppb) &&
 	    !align_eq(next, j->head, j->nand->log2_ppb)) {
 		dhara_set_error(err, DHARA_E_JOURNAL_FULL);
 		return -1;
@@ -702,6 +712,7 @@ static int push_meta(struct dhara_journal *j, const uint8_t *meta,
 		return recover_from(j, my_err, err);
 
 	j->flags &= ~DHARA_JOURNAL_F_DIRTY;
+	j->tail_sync = j->tail;
 
 	j->root = old_head;
 	j->head = next_upage(j, j->head);

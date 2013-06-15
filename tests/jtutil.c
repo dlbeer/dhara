@@ -36,13 +36,19 @@ void jt_check(struct dhara_journal *j)
 	 */
 	check_upage(j, j->head);
 	check_upage(j, j->tail);
+	check_upage(j, j->tail_sync);
 
 	/* The head never advances forward onto the same block as the
 	 * tail.
 	 */
-	if (!((j->head ^ j->tail) >> j->nand->log2_ppb)) {
-		assert(j->head >= j->tail);
+	if (!((j->head ^ j->tail_sync) >> j->nand->log2_ppb)) {
+		assert(j->head >= j->tail_sync);
 	}
+
+	/* The current tail is always between the head and the
+	 * synchronized tail.
+	 */
+	assert((j->head - j->tail_sync) >= (j->tail - j->tail_sync));
 
 	/* The root always points to a valid user page in a non-empty
 	 * journal.
@@ -122,7 +128,6 @@ static int enqueue(struct dhara_journal *j, uint32_t id, dhara_error_t *err)
 
 int jt_enqueue_sequence(struct dhara_journal *j, int start, int count)
 {
-	const int init_size = dhara_journal_size(j);
 	int i;
 
 	if (count < 0)
@@ -140,7 +145,7 @@ int jt_enqueue_sequence(struct dhara_journal *j, int start, int count)
 			dabort("enqueue", err);
 		}
 
-		assert(dhara_journal_size(j) >= init_size + i);
+		assert(dhara_journal_size(j) >= i);
 		root = dhara_journal_root(j);
 
 		if (dhara_journal_read_meta(j, j->root, meta, &err) < 0)

@@ -45,10 +45,6 @@ int main(void)
 
 		printf("Rep: %d\n", rep);
 
-		printf("    shift head...\n");
-		jt_enqueue_sequence(&journal, 0xff, 1);
-		jt_dequeue_sequence(&journal, 0xff, 1);
-
 		printf("    enqueue until error...\n");
 		count = jt_enqueue_sequence(&journal, 0, -1);
 		printf("    enqueue count: %d\n", count);
@@ -57,6 +53,9 @@ int main(void)
 		printf("    dequeue...\n");
 		jt_dequeue_sequence(&journal, 0, count);
 		printf("    size: %d\n", dhara_journal_size(&journal));
+
+		/* Only way to recover space here... */
+		dhara_journal_clear(&journal);
 	}
 
 	printf("\n");
