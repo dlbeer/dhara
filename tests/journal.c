@@ -92,7 +92,7 @@ int main(void)
 		count = jt_enqueue_sequence(&journal, 0, 100);
 		assert(count == 100);
 
-		while (!dhara_journal_is_checkpointed(&journal)) {
+		while (!dhara_journal_is_clean(&journal)) {
 			const int c = jt_enqueue_sequence(&journal,
 				count++, 1);
 

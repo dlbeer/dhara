@@ -179,6 +179,8 @@ static void reset_journal(struct dhara_journal *j)
 	j->bb_last = j->nand->num_blocks >> 6;
 	j->bb_current = 0;
 
+	j->flags = 0;
+
 	/* Empty journal */
 	j->head = 0;
 	j->tail = 0;
@@ -386,6 +388,7 @@ int dhara_journal_resume(struct dhara_journal *j, dhara_error_t *err)
 		return -1;
 	}
 
+	j->flags &= ~DHARA_JOURNAL_F_DIRTY;
 	clear_recovery(j);
 	return 0;
 }
@@ -490,6 +493,7 @@ void dhara_journal_dequeue(struct dhara_journal *j)
 		return;
 
 	j->tail = next_upage(j, j->tail);
+	j->flags |= DHARA_JOURNAL_F_DIRTY;
 
 	if (j->head == j->tail)
 		j->root = DHARA_PAGE_NONE;
@@ -499,6 +503,7 @@ void dhara_journal_clear(struct dhara_journal *j)
 {
 	j->tail = j->head;
 	j->root = DHARA_PAGE_NONE;
+	j->flags |= DHARA_JOURNAL_F_DIRTY;
 
 	hdr_clear_user(j->page_buf, j->nand->log2_page_size);
 }
@@ -543,6 +548,7 @@ static int prepare_head(struct dhara_journal *j, dhara_error_t *err)
 		return -1;
 	}
 
+	j->flags |= DHARA_JOURNAL_F_DIRTY;
 	if (!is_aligned(j->head, j->nand->log2_ppb))
 		return 0;
 
@@ -695,6 +701,8 @@ static int push_meta(struct dhara_journal *j, const uint8_t *meta,
 	if (dhara_nand_prog(j->nand, j->head + 1, j->page_buf, &my_err) < 0)
 		return recover_from(j, my_err, err);
 
+	j->flags &= ~DHARA_JOURNAL_F_DIRTY;
+
 	j->root = old_head;
 	j->head = next_upage(j, j->head);
 
@@ -742,11 +750,6 @@ int dhara_journal_copy(struct dhara_journal *j,
 
 	dhara_set_error(err, DHARA_E_TOO_BAD);
 	return -1;
-}
-
-int dhara_journal_is_checkpointed(const struct dhara_journal *j)
-{
-	return is_aligned(j->head, j->log2_ppc);
 }
 
 void dhara_journal_ack_recoverable(struct dhara_journal *j)

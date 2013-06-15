@@ -45,6 +45,9 @@
  */
 #define DHARA_PAGE_NONE			((dhara_page_t)0xffffffff)
 
+/* State flags */
+#define DHARA_JOURNAL_F_DIRTY		0x01
+
 /* The journal layer presents the NAND pages as a double-ended queue.
  * Pages, with associated metadata may be pushed onto the end of the
  * queue, and pages may be popped from the end.
@@ -75,6 +78,9 @@ struct dhara_journal {
 	 * passes the end of the chip and wraps around.
 	 */
 	uint8_t				epoch;
+
+	/* General purpose flags field */
+	uint8_t				flags;
 
 	/* Bad-block counters. bb_last is our best estimate of the
 	 * number of bad blocks in the chip as a whole. bb_current is
@@ -208,10 +214,19 @@ int dhara_journal_copy(struct dhara_journal *j,
 		       dhara_page_t p, const uint8_t *meta,
 		       dhara_error_t *err);
 
+/* Mark the journal dirty. */
+static inline void dhara_journal_mark_dirty(struct dhara_journal *j)
+{
+	j->flags |= DHARA_JOURNAL_F_DIRTY;
+}
+
 /* Is the journal checkpointed? If true, then all pages enqueued are now
  * persistent.
  */
-int dhara_journal_is_checkpointed(const struct dhara_journal *j);
+static inline int dhara_journal_is_clean(const struct dhara_journal *j)
+{
+	return !(j->flags & DHARA_JOURNAL_F_DIRTY);
+}
 
 /* These two functions comprise the assisted recovery procedure. If an
  * enqueue or copy operation returns an error of E_RECOVER, the journal
