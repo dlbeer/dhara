@@ -502,7 +502,7 @@ void dhara_journal_dequeue(struct dhara_journal *j)
 	/* If the journal is clean at the time of dequeue, then this
 	 * data was always obsolete, and can be reused immediately.
 	 */
-	if (!(j->flags & DHARA_JOURNAL_F_DIRTY))
+	if (!(j->flags & (DHARA_JOURNAL_F_DIRTY | DHARA_JOURNAL_F_RECOVERY)))
 		j->tail_sync = j->tail;
 
 	if (j->head == j->tail)
@@ -736,7 +736,6 @@ static int push_meta(struct dhara_journal *j, const uint8_t *meta,
 		return recover_from(j, my_err, err);
 
 	j->flags &= ~DHARA_JOURNAL_F_DIRTY;
-	j->tail_sync = j->tail;
 
 	j->root = old_head;
 	j->head = next_upage(j, j->head);
@@ -746,6 +745,9 @@ static int push_meta(struct dhara_journal *j, const uint8_t *meta,
 
 	if (j->flags & DHARA_JOURNAL_F_ENUM_DONE)
 		finish_recovery(j);
+
+	if (!(j->flags & DHARA_JOURNAL_F_RECOVERY))
+		j->tail_sync = j->tail;
 
 	return 0;
 }
