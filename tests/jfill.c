@@ -55,7 +55,7 @@ int main(void)
 		printf("    size: %d\n", dhara_journal_size(&journal));
 
 		/* Only way to recover space here... */
-		dhara_journal_clear(&journal);
+		journal.tail_sync = journal.tail;
 	}
 
 	printf("\n");

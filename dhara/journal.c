@@ -511,10 +511,7 @@ void dhara_journal_dequeue(struct dhara_journal *j)
 
 void dhara_journal_clear(struct dhara_journal *j)
 {
-	/* If all data is obsolete, we can reuse space immediately. */
 	j->tail = j->head;
-	j->tail_sync = j->head;
-
 	j->root = DHARA_PAGE_NONE;
 	j->flags |= DHARA_JOURNAL_F_DIRTY;
 
