@@ -75,9 +75,14 @@ static uint8_t pages[MEM_SIZE];
 
 void sim_reset(void)
 {
+	int i;
+
 	memset(&stats, 0, sizeof(stats));
 	memset(blocks, 0, sizeof(blocks));
-	memset(pages, 0xff, sizeof(pages));
+	memset(pages, 0x55, sizeof(pages));
+
+	for (i = 0; i < NUM_BLOCKS; i++)
+		blocks[i].next_page = PAGES_PER_BLOCK;
 }
 
 static void timebomb_tick(dhara_block_t blk)

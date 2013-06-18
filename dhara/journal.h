@@ -32,7 +32,7 @@
 /* This is the size of the metadata slice which accompanies each written
  * page. This is independent of the underlying page/OOB size.
  */
-#define DHARA_META_SIZE			136
+#define DHARA_META_SIZE			132
 
 /* When a block fails, or garbage is encountered, we try again on the
  * next block/checkpoint. We can do this up to the given number of
