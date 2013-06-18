@@ -41,6 +41,8 @@ const struct dhara_nand sim_nand = {
 
 /* Call counts */
 struct sim_stats {
+	int		frozen;
+
 	int		is_bad;
 	int		mark_bad;
 
@@ -104,7 +106,8 @@ int dhara_nand_is_bad(const struct dhara_nand *n, dhara_block_t bno)
 		abort();
 	}
 
-	stats.is_bad++;
+	if (!stats.frozen)
+		stats.is_bad++;
 	return blocks[bno].flags & BLOCK_BAD_MARK;
 }
 
@@ -116,7 +119,8 @@ void dhara_nand_mark_bad(const struct dhara_nand *n, dhara_block_t bno)
 		abort();
 	}
 
-	stats.mark_bad++;
+	if (!stats.frozen)
+		stats.mark_bad++;
 	blocks[bno].flags |= BLOCK_BAD_MARK;
 }
 
@@ -137,13 +141,15 @@ int dhara_nand_erase(const struct dhara_nand *n, dhara_block_t bno,
 		abort();
 	}
 
-	stats.erase++;
+	if (!stats.frozen)
+		stats.erase++;
 	blocks[bno].next_page = 0;
 
 	timebomb_tick(bno);
 
 	if (blocks[bno].flags & BLOCK_FAILED) {
-		stats.erase_fail++;
+		if (!stats.frozen)
+			stats.erase_fail++;
 		seq_gen(bno * 57 + 29, blk, BLOCK_SIZE);
 		dhara_set_error(err, DHARA_E_BAD_BLOCK);
 		return -1;
@@ -180,13 +186,15 @@ int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p,
 		abort();
 	}
 
-	stats.prog++;
+	if (!stats.frozen)
+		stats.prog++;
 	blocks[bno].next_page = pno + 1;
 
 	timebomb_tick(bno);
 
 	if (blocks[bno].flags & BLOCK_FAILED) {
-		stats.prog_fail++;
+		if (!stats.frozen)
+			stats.prog_fail++;
 		seq_gen(p * 57 + 29, page, PAGE_SIZE);
 		dhara_set_error(err, DHARA_E_BAD_BLOCK);
 		return -1;
@@ -207,7 +215,8 @@ int dhara_nand_is_free(const struct dhara_nand *n, dhara_page_t p)
 		abort();
 	}
 
-	stats.is_erased++;
+	if (!stats.frozen)
+		stats.is_erased++;
 	return blocks[bno].next_page <= pno;
 }
 
@@ -232,8 +241,10 @@ int dhara_nand_read(const struct dhara_nand *n, dhara_page_t p,
 		abort();
 	}
 
-	stats.read++;
-	stats.read_bytes += length;
+	if (!stats.frozen) {
+		stats.read++;
+		stats.read_bytes += length;
+	}
 
 	memcpy(data, page + offset, length);
 	return 0;
@@ -307,6 +318,16 @@ void sim_inject_timebombs(int count, int max_ttl)
 	for (i = 0; i < count; i++)
 		sim_set_timebomb(random() % NUM_BLOCKS,
 				 random() % max_ttl + 1);
+}
+
+void sim_freeze(void)
+{
+	stats.frozen++;
+}
+
+void sim_thaw(void)
+{
+	stats.frozen--;
 }
 
 void sim_dump(void)

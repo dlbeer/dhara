@@ -30,6 +30,10 @@ void sim_reset(void);
 /* Dump statistics and status */
 void sim_dump(void);
 
+/* Halt/resume counting of statistics */
+void sim_freeze(void);
+void sim_thaw(void);
+
 /* Set faults on individual blocks */
 void sim_set_failed(dhara_block_t blk);
 void sim_set_timebomb(dhara_block_t blk, int ttl);

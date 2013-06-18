@@ -94,8 +94,12 @@ static int check_recurse(struct dhara_map *m,
 
 static void mt_check(struct dhara_map *m)
 {
-	const int count = check_recurse(m, m->journal.head,
+	int count;
+
+	sim_freeze();
+	count = check_recurse(m, m->journal.head,
 		dhara_journal_root(&m->journal), 0, 0);
+	sim_thaw();
 
 	assert(m->count == count);
 }
