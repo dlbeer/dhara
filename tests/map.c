@@ -22,7 +22,7 @@
 #include "util.h"
 #include "sim.h"
 
-#define NUM_SECTORS		300
+#define NUM_SECTORS		200
 #define GC_RATIO		4
 
 static dhara_sector_t sector_list[NUM_SECTORS];
@@ -92,10 +92,12 @@ static int check_recurse(struct dhara_map *m,
 	return count;
 }
 
-static int mt_check(struct dhara_map *m)
+static void mt_check(struct dhara_map *m)
 {
-	return check_recurse(m, m->journal.head,
+	const int count = check_recurse(m, m->journal.head,
 		dhara_journal_root(&m->journal), 0, 0);
+
+	assert(m->count == count);
 }
 
 static void mt_write(struct dhara_map *m, dhara_sector_t s, int seed)
@@ -125,7 +127,7 @@ static void mt_trim(struct dhara_map *m, dhara_sector_t s)
 {
 	dhara_error_t err;
 
-	if (dhara_map_trim(m, s, 0, &err) < 0)
+	if (dhara_map_trim(m, s, &err) < 0)
 		dabort("map_trim", err);
 }
 
@@ -149,7 +151,7 @@ int main(void)
 
 	sim_reset();
 	sim_inject_bad(10);
-	sim_inject_timebombs(20, 8);
+	sim_inject_timebombs(30, 20);
 
 	printf("Map init\n");
 	dhara_map_init(&map, &sim_nand, page_buf, GC_RATIO);
@@ -178,6 +180,9 @@ int main(void)
 	printf("Resume...\n");
 	dhara_map_init(&map, &sim_nand, page_buf, GC_RATIO);
 	dhara_map_resume(&map, NULL);
+	printf("  capacity: %d\n", dhara_map_capacity(&map));
+	printf("  use count: %d\n", dhara_map_size(&map));
+	printf("\n");
 
 	printf("Read back...\n");
 	shuffle(1);
@@ -204,6 +209,9 @@ int main(void)
 	printf("Resume...\n");
 	dhara_map_init(&map, &sim_nand, page_buf, GC_RATIO);
 	dhara_map_resume(&map, NULL);
+	printf("  capacity: %d\n", dhara_map_capacity(&map));
+	printf("  use count: %d\n", dhara_map_size(&map));
+	printf("\n");
 
 	printf("Read back...\n");
 	for (i = 0; i < NUM_SECTORS; i += 2) {

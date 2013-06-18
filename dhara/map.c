@@ -398,7 +398,7 @@ int dhara_map_copy_sector(struct dhara_map *m, dhara_sector_t src,
 
 	if (dhara_map_find(m, src, &p, &my_err) < 0) {
 		if (my_err == DHARA_E_NOT_FOUND)
-			return dhara_map_trim(m, dst, 0, err);
+			return dhara_map_trim(m, dst, err);
 
 		dhara_set_error(err, my_err);
 		return -1;
@@ -408,13 +408,13 @@ int dhara_map_copy_sector(struct dhara_map *m, dhara_sector_t src,
 }
 
 static int try_delete(struct dhara_map *m, dhara_sector_t s,
-		      int order, dhara_error_t *err)
+		      dhara_error_t *err)
 {
 	dhara_error_t my_err;
 	uint8_t meta[DHARA_META_SIZE];
 	dhara_page_t alt_page;
 	uint8_t alt_meta[DHARA_META_SIZE];
-	int level = DHARA_RADIX_DEPTH - 1 - order;
+	int level = DHARA_RADIX_DEPTH - 1;
 	int i;
 
 	if (trace_path(m, s, NULL, meta, &my_err) < 0) {
@@ -456,22 +456,23 @@ static int try_delete(struct dhara_map *m, dhara_sector_t s,
 
 	meta_set_alt(meta, level, DHARA_PAGE_NONE);
 
-	return dhara_journal_copy(&m->journal, alt_page, meta, err);
+	ck_set_count(dhara_journal_cookie(&m->journal), m->count - 1);
+	if (dhara_journal_copy(&m->journal, alt_page, meta, err) < 0)
+		return -1;
+
+	m->count--;
+	return 0;
 }
 
-int dhara_map_trim(struct dhara_map *m, dhara_sector_t s,
-		   int order, dhara_error_t *err)
+int dhara_map_trim(struct dhara_map *m, dhara_sector_t s, dhara_error_t *err)
 {
-	if (order < 0)
-		order = 0;
-
 	for (;;) {
 		dhara_error_t my_err;
 
 		if (auto_gc(m, err) < 0)
 			return -1;
 
-		if (!try_delete(m, s, order, &my_err))
+		if (!try_delete(m, s, &my_err))
 			break;
 
 		if (try_recover(m, my_err, err) < 0)

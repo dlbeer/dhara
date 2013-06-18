@@ -97,7 +97,7 @@ int dhara_map_copy_sector(struct dhara_map *m, dhara_sector_t src,
  * (2**order)-aligned group of s are to be deleted.
  */
 int dhara_map_trim(struct dhara_map *m, dhara_sector_t s,
-		   int order, dhara_error_t *err);
+		   dhara_error_t *err);
 
 /* Synchronize the map. Once this returns successfully, all changes to
  * date are persistent and durable. Conversely, there is no guarantee
