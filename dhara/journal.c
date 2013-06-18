@@ -237,7 +237,7 @@ static int find_checkblock(struct dhara_journal *j,
 	}
 
 	dhara_set_error(err, DHARA_E_TOO_BAD);
-	return 0;
+	return -1;
 }
 
 static dhara_block_t find_last_checkblock(struct dhara_journal *j,

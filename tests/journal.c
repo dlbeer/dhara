@@ -62,6 +62,7 @@ int main(void)
 
 	printf("Journal init\n");
 	dhara_journal_init(&journal, &sim_nand, page_buf);
+	dhara_journal_resume(&journal, NULL);
 	dump_info(&journal);
 	printf("\n");
 
