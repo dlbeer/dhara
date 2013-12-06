@@ -1,0 +1,417 @@
+			  Dhara map internals
+
+		     Daniel Beer <dlbeer@gmail.com>
+			       7 Dec 2013
+
+The map data structure implements the top-level flash translation layer.
+It provides a disk-like interface, where page-sized sectors can be
+written (and rewritten, in arbitrary order) to logical sector numbers.
+Given a logical sector number, we can read back the most recently
+written data. Both of these operations are fairly efficient (O(log N),
+where n is the maximum number of possible sector addresses).
+
+The structure also has to handle, with the assistance of the journal,
+bad block recovery and garbage collection.
+
+The journal provides a persistent queue, with two basic operations:
+
+  - enqueue, which takes page data and a fixed-size tag block of
+    metadata, and adds the tagged page to the front of the queue.
+
+  - dequeue, which removes one page from the back of the queue.
+
+The metadata is of a universally fixed size -- it is unrelated to the
+page size, OOB size, or any other characteristic of the chip.
+
+Once items are enqueued, they (and their associated metadata) can be
+referred to by the page at which they were written. They remain
+referable in this way until the exit the back of the queue via a dequeue
+operation. Both enqueue and dequeue are constant-time operations, and so
+is reading, once we know the page number we want to read from. But how
+do we efficiently associate logical sector numbers to page numbers?
+
+Functional radix trees
+======================
+
+Once pages are written, they have a fixed page number (which we can't
+choose in advance) which remains valid for their lifetime. Written pages
+cannot be altered. What we want is a mutable mapping from sector
+addresses (which we *can* choose) which allows us to rewrite pages in
+arbitrary order.
+
+We start by considering a functional radix tree. A radix tree is a
+structure which maps fixed-size keys to values. In particular, we want
+to consider a *binary* radix tree. For the remainder of this document,
+we'll assume 4-bit sector addresses (they're 32-bits in practice, but
+that makes the diagrams too hard to draw). The length of the addresses,
+and hence the height of the tree, will be referred to as H.
+
+With 4-bit sector addresses, we have a radix tree that's 4 non-leaf
+levels deep, with two down-pointers per leaf-node. Each level is
+implicitly associated with a bit position in the key. To find the data
+associated with a sector, start at the root, and consider the first bit
+of the key. If the bit is 0, follow the left down-pointer. If 1, follow
+right. Arriving at the next node, consider the 2nd bit of the key.
+Repeat until we have simultaneously exhausted all key bits, and arrived
+at the leaf level.
+
+Suppose we have stored in our tree data for sectors 0000, 0001, 1000 and
+1010. Our tree would look something like this:
+
+		(root)
+	       /      \
+	      (0)      (1)
+	     /            \
+	   (00)          (10)
+	  /             /    \
+	(000)        (100)  (101)
+       /     \      /            \
+    [0000] [0001] [1000]        [1010]
+
+What happens if we want to store new data? Our radix tree is functional,
+which means that we can't modify any objects already present (except the
+root pointer), but we can create new objects, and we can update the root
+pointer.
+
+Suppose we wanted to rewrite the data associated with key 1010. We would
+allocate new objects and update the root as follows:
+
+	+---------------------+
+	|                     |
+	|     (old-root)      |         (new-root)
+	|      /      \       +---------+      \
+	+--> (0)      (1)*                     (1)
+	     /        +--\-----------+           \
+	   (00)       |  (10)*       |           (10)
+	  /           v /    \       +-----------+   \
+	(000)        (100)  (101)*                  (101)
+       /     \      /            \                       \
+    [0000] [0001] [1000]        [1010]*                 [1010]
+
+We have constructed a new version of the sector data, and new versions
+of all the intermediate nodes which link the root to the rewritten
+sector. At each intermediate, where there is an alternative non-NULL
+path, we've reused the same child as in the old version of the tree. The
+objects marked with an asterisk (*) are not reachable from the new root;
+they have become garbage.
+
+This is the conceptual basis of the Dhara map structure. But, we can
+improve on the absolute space-efficiency of this, and reduce the average
+number of reads necessary to find a given leaf.
+
+Alt-pointer queue
+=================
+
+Note that when we updated our radix tree, we always construct exactly
+one new leaf node (the sector data) and exactly 4 (being the number of
+key bits) non-leaf nodes. We can therefore always pack these items
+together in a fixed-size allocation unit.
+
+Furthermore, note that in any update, the set of non-leaf nodes always
+form a path to the sector which has been updated. Therefore, at least
+half of the down-pointers in the set can be omitted, since they can be
+inferred by association (provided we know which level each non-leaf
+belongs to). The only piece of information for each non-leaf which can't
+be inferred is the pointer which *doesn't* point along the path to the
+updated sector. We call these pointers "alt-pointers".
+
+Instead of storing one leaf and H non-leaf nodes for each update, we
+simply store together:
+
+  * {s0, s1, s2, ..., s(H-1)}: An array of bits, giving the sector
+    address of this update.
+
+  * {A0, A1, A2, ..., A(H-1)}: An array of H alt-pointers.
+
+  * The new data associated with this sector address
+
+Given any update record, and some integer 0 <= k < H, the following
+property holds:
+
+    Ak is either NULL, or it points to the most recent update record
+    whose sector address shares its first k bits with this one.
+
+This is analogous to the prefix property which is implied by the
+down-pointers in the radix tree. To give a concrete example, suppose we
+reconstruct the radix tree of our earlier example by starting with a
+single sector, 0001. We start with a single update record:
+
+    +---+
+    | 0 |
+    | 0 |
+    | 0 |
+    | 1 |
+    +---+
+
+All the alt-pointers are NULL, because they have nothing to point to.
+Now, we update the map by adding an update record for the sector address
+0000:
+
+    +---+   +---+
+    | 0 |   | 0 |
+    | 0 |   | 0 |
+    | 0 |   | 0 |
+    | 1 |<----0 |
+    +---+   +---+
+
+The new record has a single non-NULL alt-pointer at position H-1 (= 3),
+and this pointer points to the previous record. Note that the two
+records have in common their first 3 sector address bits. Now we add
+1010 and 1000, to give:
+
+    +---+   +---+   +---+    +---+
+    | 0 |   | 0 |<----1--------1 |
+    | 0 |   | 0 |   | 0 |    | 0 |
+    | 0 |   | 0 |   | 1 |<-----0 |
+    | 1 |<----0 |   | 0 |    | 0 |
+    +---+   +---+   +---+    +---+
+
+Note that both the third and forth records from the left have an
+alt-pointer at position 0 which points to the second record. Now,
+suppose we replace the data on page 1010, as in the previous example:
+
+    +---+   +---+   +---+    +---+    +---+
+    | 0 |   | 0 |<----1--------1--------1 |
+    | 0 |   | 0 |   | 0 |    | 0 |    | 0 |
+    | 0 |   | 0 |   | 1 |<-----0 |<-----1 |
+    | 1 |<----0 |   | 0 |    | 0 |    | 0 |
+    +---+   +---+   +---+    +---+    +---+
+
+We now have two update records which both have the sector address 1010
+-- but only one of them (the rightmost) is reachable by following the
+lookup procedure.  This procedure is:
+
+  * Start at the most recent (rightmost) record.
+  * For i = 0 .. H-1:
+    * If the current record is NULL:
+      * return NOT-FOUND
+    * If bit i of the target address differs from bit i of the current
+      record's sector address:
+      * Follow alt-pointer i to obtain a new current record.
+  * Return the current record.
+
+The procedure for updating a record has a very similar structure. To
+update a record, we must first look it up. But in the process of doing
+so, we build up an array of alt-pointers. The inner part of the loop
+changes so that it builds A[] as:
+
+  * If the current record is NULL:
+    * set Ai..A(H-1) to NULL
+    * return NOT-FOUND
+  * If bit i of the target address differs from bit i of the current
+    record's sector address:
+    * set Ai = address of the current record
+    * Follow alt-pointer i to obtain a new current record.
+  * Else:
+    * set Ai = alt-pointer i of the current record
+
+Garbage collection
+==================
+
+We now have a data structure which can be represented within the
+confines of the journal, and requires only the enqueuing of immutable
+records to maintain an efficient mutable mapping. So far, so good -- but
+we can't allow the journal to grow without bound. At some point, we need
+to dequeue records to free space.
+
+Consider the following journal state:
+
+    +---+   +---+   +---+    +---+    +---+   +---+
+    | 0 |   | 0 |<----1--------1--------1 |<----0 |
+    | 0 |   | 0 |   | 0 |    | 0 |    | 0 |   | 0 |
+    | 0 |   | 0 |   | 1 |<-----0 |<-----1 |   | 0 |
+    | 1 |<----0 |<+ | 0 |    | 0 |    | 0 | +---1 |
+    +---+   +---+ | +---+    +---+    +---+ | +---+
+		  |                         |
+		  +-------------------------+
+
+By direct inspection of the last page of the journal, we see that it
+contains an update record for sector 0001. However, following the lookup
+procedure for sector 0001 lands us on a different (more recent) page.
+This page is therefore not required for its leaf data.
+
+But what about the alt-pointers? You can see in the diagram above that
+at least one other page points to the leftmost page. Perhaps it's not
+safe to remove this page after all?
+
+Let L be the leftmost page, and let R be its most recent replacement (R
+must exist, because otherwise we wouldn't be able to consider the
+removal of L in the first place). Now let M be some page with an
+alt-pointer referencing L, at some index (k). Will this alt-pointer ever
+need to be followed by the lookup procedure?
+
+Because M points at level k to L, it must be that M's sector address
+shares its first k bits with that of L. It must also share the first k
+bits with R (because R and L have the same address). Furthermore, R must
+be more recent that M (if it were not so, then M would be pointing to R,
+rather than L -- because alt-pointers always point to the most recent
+prefix-sharing update).
+
+Now suppose we're searching for some sector T, and at some point during
+the lookup, we land on page M by following an alt-pointer at a depth of
+i. By the properties of alt-pointers, page M shares a prefix of at least
+(i+1) bits with the target address T, and is the most recent page to do
+so. It follows from this that (i+1) > k, because otherwise R would be
+the most recent page with the required prefix.
+
+Since arriving at M requires following an alt-pointer at a level i >= k,
+we will never follow an alt-pointer *from* M at level k. Therefore, the
+alt-pointer in question is no longer required, and the page L can be
+safely removed.
+
+To summarize: if the last page in the journal is not the most recent
+update of its sector address, it may be safely dequeued.
+
+Dequeueing the page in question, we get:
+
+     +---+   +---+    +---+    +---+   +---+
+     | 0 |<----1--------1--------1 |<----0 |
+     | 0 |   | 0 |    | 0 |    | 0 |   | 0 |
+     | 0 |   | 1 |<-----0 |<-----1 |   | 0 |
+    X--0 |<+ | 0 |    | 0 |    | 0 | +---1 |
+     +---+ | +---+    +---+    +---+ | +---+
+	   |                         |
+	   +-------------------------+
+
+This is a fine scheme for removing obsolete pages from the leftmost end
+of the queue, but what if the queue contains garbage in the middle? In
+the diagram above, the journal contains at least one garbage page (the
+first occurance of 1010), but the leftmost page isn't garbage.
+
+There is an operation, which we call "repack", that we can perform which
+preserves the mapping while obsoleting the leftmost page. We simply
+perform an update which recopies the sector data of the leftmost page.
+Performing this operation on the journal above yields:
+
+     +---+   +---+    +---+    +---+   +---+   +---+
+     | 0 |<----1--------1--------1 |<----0-------0 |
+     | 0 |   | 0 |    | 0 |    | 0 |   | 0 |   | 0 |
+     | 0 |   | 1 |<-----0 |<-----1 |   | 0 |   | 0 |
+    X--0 |<+ | 0 |    | 0 |    | 0 | +---1 |<----0 |
+     +---+ | +---+    +---+    +---+ | +---+   +---+
+	   |                         |
+	   +-------------------------+
+
+Following the repack, the leftmost page becomes garbage, and can be
+dequeued:
+
+     +---+    +---+    +---+   +---+   +---+
+    X--1--------1--------1 |<----0-------0 |
+     | 0 |    | 0 |    | 0 |   | 0 |   | 0 |
+     | 1 |<-----0 |<-----1 |   | 0 |   | 0 |
+     | 0 |    | 0 |    | 0 |  X--1 |<----0 |
+     +---+    +---+    +---+   +---+   +---+
+
+After this dequeue, the mid-journal garbage page is now exposed as the
+leftmost page, and can be removed with a further dequeue operation, to
+yield a completely garbage-free journal:
+
+     +---+    +---+   +---+   +---+
+    X--1--------1 |<----0-------0 |
+     | 0 |    | 0 |   | 0 |   | 0 |
+    X--0 |<-----1 |   | 0 |   | 0 |
+     | 0 |    | 0 |  X--1 |<----0 |
+     +---+    +---+   +---+   +---+
+
+Our incremental garbage collection step can be summarized as:
+
+  * Let S = the sector address of the leftmost page in the journal
+  * Look up S to find its page address, P
+  * If P is the leftmost page:
+    * Rewrite S, using the data stored on page P
+  * Dequeue the leftmost page
+
+This might yield a reduction in journal size, but it's not guaranteed to
+do so. The one thing it does guarantee is that any garbage in the
+journal will be removed, given sufficient garbage collections steps.
+
+Overflow avoidance
+------------------
+
+Our only means of reducing the size of the journal requires the ability
+to enqueue new items if necessary. This works fine, but only if we make
+sure that we never fill the journal completely. If this happens, we're
+stuck, and can't make any progress.
+
+We could avoid getting stuck by making sure we perform sufficient
+garbage collection if we seem to be running low on capacity. But we
+don't want to spend all our time doing this, because we can't predict
+how many garbage collection steps will be required in order to reduce
+the size of the journal.
+
+Our strategy for avoiding overflow can be described as follows: let Cj
+be the effective size of the journal, in pages (we subtract a certain
+safety margin to allow for the possibility of blocks going bad). We
+choose some integer R >= 1, which we call the "collection ratio". We
+then declare the maximum *map* capacity to be:
+
+    Cm = Cj * R / (R+1)
+
+A count is kept of allocated pages in the map, and it is prevented from
+exceeding Cm. When we go to perform an update, we check the size of the
+map (Sm) against the size of the journal (Sj). If Sj >= Cm, then we
+perform R steps of the garbage collection algorithm before performing
+our write.
+
+Synchronization
+---------------
+
+The journal doesn't have an explicit synchronization algorithm, but
+synchronization points occur periodically for every so many enqueue
+operations.
+
+The map layer provides an explicit synchronization algorithm. When
+requested, we perform garbage collection steps until we reach a
+synchronization point. Of course, garbage collection may simply result
+in the dequeueing of the tail without a corresponding enqueue.
+
+If the journal is exhausted of pages, we just repack the front page as
+many times as necessary.
+
+Bad-block recovery
+------------------
+
+If a block goes bad during a journal enqueue attempt, the attempt fails
+and the journal enters recovery mode. In this mode, we're able to
+enumerate the pages located on the failed block, along with their
+metadata.
+
+We recovery by applying the garbage collection procedure to each page in
+the list: if the page is not the most recent copy of the sector it
+represents, it is skipped. Otherwise, we repack it at the front of the
+journal.
+
+If there are no pages left in the bad block, and recovery is not yet
+complete (i.e.  the journal is not yet synchronized), we simply repack
+the front of the queue to pad to a synchronization point.
+
+This algorithm is stateless, so no special handling is required if
+recovery needs to be restarted.
+
+Deletion
+========
+
+If we want to delete a page from a radix tree, we take the non-leaf node
+that points to the victim page, and update the pointer to be NULL. In
+fact, since this may result in the parent of said node being empty, we
+can often prune the tree at a higher level -- specifically, at the level
+of the first node which points to a subtree containing nothing other
+than the victim page. Call this node the "delete-root". Note that the
+delete-root, by definition, has two non-NULL child pointers.
+
+To do this on a functional radix tree, we'd have to update all nodes up
+to and including the delete-root. How do we do this in our case? All
+updates require the writing of a page. We could do this by writing a
+placeholder page and associated metadata, but this is wasteful and we
+might never be able to get rid of the placeholder through
+garbage-collection (depending on subsequent updates).
+
+What we do instead is rewrite a different page which contains the
+delete-root in its path. From the delete-root, choose any page in the
+"other" subtree, and repack it. But, update the metadata so that the
+alt-pointer at the level of the delete-root is now NULL.
+
+Having done this, we've performed an action equivalent to repacking,
+which creates one page, but also removed one logical page from the map.
+Of course, there is one case that must be handled specially: deletion of
+the tree root.
