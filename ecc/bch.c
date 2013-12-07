@@ -125,13 +125,9 @@ static inline gf13_elem_t mod_s(gf13_elem_t e)
 }
 
 static void poly_add(gf13_elem_t *dst, const gf13_elem_t *src,
-		     gf13_elem_t c, int shift)
+		     gf13_elem_t log_c, int shift)
 {
 	int i;
-	int log_c = gf13_log[c];
-
-	if (!c)
-		return;
 
 	for (i = 0; i < MAX_POLY; i++) {
 		int p = i + shift;
@@ -219,7 +215,7 @@ static void berlekamp_massey(const gf13_elem_t *s, int N,
 
 	for (n = 0; n < N; n++) {
 		gf13_elem_t d = s[n];
-		gf13_elem_t mult;
+		gf13_elem_t log_mult;
 		int i;
 
 		for (i = 1; i <= L; i++) {
@@ -230,7 +226,7 @@ static void berlekamp_massey(const gf13_elem_t *s, int N,
 					    gf13_log[s[n - i]])];
 		}
 
-		mult = gf13_exp[mod_s(GF13_ORDER - gf13_log[b] + gf13_log[d])];
+		log_mult = mod_s(GF13_ORDER - gf13_log[b] + gf13_log[d]);
 
 		if (!d) {
 			m++;
@@ -238,13 +234,13 @@ static void berlekamp_massey(const gf13_elem_t *s, int N,
 			gf13_elem_t T[MAX_POLY];
 
 			memcpy(T, C, sizeof(T));
-			poly_add(C, B, mult, m);
+			poly_add(C, B, log_mult, m);
 			memcpy(B, T, sizeof(B));
 			L = n + 1 - L;
 			b = d;
 			m = 1;
 		} else {
-			poly_add(C, B, mult, m);
+			poly_add(C, B, log_mult, m);
 			m++;
 		}
 	}
