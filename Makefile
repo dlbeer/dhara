@@ -22,7 +22,8 @@ TESTS = \
     tests/recovery.test \
     tests/jfill.test \
     tests/map.test \
-    tests/bch.test
+    tests/bch.test \
+    tests/hamming.test
 
 all: $(TESTS)
 
@@ -55,6 +56,9 @@ tests/map.test: dhara/map.o dhara/journal.o dhara/error.o tests/map.o \
 	$(CC) -o $@ $^
 
 tests/bch.test: ecc/bch.o ecc/gf13.o tests/bch.o
+	$(CC) -o $@ $^
+
+tests/hamming.test: ecc/hamming.o tests/hamming.o
 	$(CC) -o $@ $^
 
 clean:
