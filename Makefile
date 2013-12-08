@@ -23,9 +23,11 @@ TESTS = \
     tests/jfill.test \
     tests/map.test \
     tests/bch.test \
-    tests/hamming.test
+    tests/hamming.test \
+    tests/crc32.test
 TOOLS = \
-    tools/gftool
+    tools/gftool \
+    tools/gentab
 
 all: $(TESTS) $(TOOLS)
 
@@ -63,7 +65,13 @@ tests/bch.test: ecc/bch.o ecc/gf13.o tests/bch.o
 tests/hamming.test: ecc/hamming.o tests/hamming.o
 	$(CC) -o $@ $^
 
+tests/crc32.test: ecc/crc32.o tests/crc32.o
+	$(CC) -o $@ $^
+
 tools/gftool: tools/gftool.o
+	$(CC) -o $@ $^
+
+tools/gentab: tools/gentab.o
 	$(CC) -o $@ $^
 
 clean:

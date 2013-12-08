@@ -3,3 +3,4 @@
 *.test
 *.o
 tools/gftool
+tools/gentab
