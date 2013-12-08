@@ -24,8 +24,10 @@ TESTS = \
     tests/map.test \
     tests/bch.test \
     tests/hamming.test
+TOOLS = \
+    tools/gftool
 
-all: $(TESTS)
+all: $(TESTS) $(TOOLS)
 
 test: $(TESTS)
 	@@for x in $(TESTS); do echo $$x; ./$$x > /dev/null || exit 255; done
@@ -61,6 +63,10 @@ tests/bch.test: ecc/bch.o ecc/gf13.o tests/bch.o
 tests/hamming.test: ecc/hamming.o tests/hamming.o
 	$(CC) -o $@ $^
 
+tools/gftool: tools/gftool.o
+	$(CC) -o $@ $^
+
 clean:
 	rm -f */*.o
 	rm -f tests/*.test
+	rm -f $(TOOLS)
