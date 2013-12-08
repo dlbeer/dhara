@@ -20,6 +20,7 @@
 #include <assert.h>
 #include "ecc/hamming.h"
 
+#define HAMMING_CHUNK_SIZE	512
 #define TEST_CHUNK_SIZE		(HAMMING_CHUNK_SIZE + HAMMING_ECC_SIZE)
 
 static void flip_one_bit(uint8_t *b, int size)
@@ -40,9 +41,10 @@ static void flip_test(const uint8_t *good)
 	memcpy(bad, good, sizeof(bad));
 	flip_one_bit(bad, TEST_CHUNK_SIZE);
 
-	e = hamming_syndrome(bad, bad + HAMMING_CHUNK_SIZE);
+	e = hamming_syndrome(bad, HAMMING_CHUNK_SIZE,
+			     bad + HAMMING_CHUNK_SIZE);
 	assert(e);
-	hamming_repair(bad, e);
+	hamming_repair(bad, HAMMING_CHUNK_SIZE, e);
 
 	i = memcmp(good, bad, HAMMING_CHUNK_SIZE);
 	assert(!i);
@@ -53,7 +55,8 @@ static void test_properties(const uint8_t *block)
 	hamming_ecc_t e;
 	int i;
 
-	e = hamming_syndrome(block, block + HAMMING_CHUNK_SIZE);
+	e = hamming_syndrome(block, HAMMING_CHUNK_SIZE,
+			     block + HAMMING_CHUNK_SIZE);
 	assert(!e);
 
 	for (i = 0; i < 20; i++)
@@ -68,7 +71,8 @@ static void test_random_block(void)
 	for (i = 0; i < HAMMING_CHUNK_SIZE; i++)
 		block[i] = random();
 
-	hamming_generate(block, block + HAMMING_CHUNK_SIZE);
+	hamming_generate(block, HAMMING_CHUNK_SIZE,
+			 block + HAMMING_CHUNK_SIZE);
 	test_properties(block);
 }
 

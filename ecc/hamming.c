@@ -54,7 +54,7 @@ static const uint8_t bit_count[] = {
 	0x05, 0x06, 0x06, 0x07, 0x06, 0x07, 0x07, 0x08
 };
 
-static hamming_ecc_t parity_scan(const uint8_t *chunk)
+static hamming_ecc_t parity_scan(const uint8_t *chunk, size_t len)
 {
 	uint8_t column = 0;
 	uint16_t line = 0;
@@ -62,7 +62,7 @@ static hamming_ecc_t parity_scan(const uint8_t *chunk)
 	hamming_ecc_t out = 0;
 	int i;
 
-	for (i = 0; i < HAMMING_CHUNK_SIZE; i++) {
+	for (i = 0; i < len; i++) {
 		const uint8_t c = chunk[i];
 
 		column ^= c;
@@ -94,9 +94,9 @@ static hamming_ecc_t parity_scan(const uint8_t *chunk)
 	return out ^ 0xffffff;
 }
 
-void hamming_generate(const uint8_t *chunk, uint8_t *ecc)
+void hamming_generate(const uint8_t *chunk, size_t len, uint8_t *ecc)
 {
-	hamming_ecc_t p = parity_scan(chunk);
+	hamming_ecc_t p = parity_scan(chunk, len);
 
 	ecc[0] = p;
 	p >>= 8;
@@ -105,9 +105,10 @@ void hamming_generate(const uint8_t *chunk, uint8_t *ecc)
 	ecc[2] = p;
 }
 
-hamming_ecc_t hamming_syndrome(const uint8_t *chunk, const uint8_t *ecc)
+hamming_ecc_t hamming_syndrome(const uint8_t *chunk, size_t len,
+			       const uint8_t *ecc)
 {
-	const hamming_ecc_t p = parity_scan(chunk);
+	const hamming_ecc_t p = parity_scan(chunk, len);
 	hamming_ecc_t q = 0;
 
 	q |= ecc[2];
@@ -119,7 +120,7 @@ hamming_ecc_t hamming_syndrome(const uint8_t *chunk, const uint8_t *ecc)
 	return p ^ q;
 }
 
-int hamming_repair(uint8_t *chunk, hamming_ecc_t syndrome)
+int hamming_repair(uint8_t *chunk, size_t len, hamming_ecc_t syndrome)
 {
 	int pos = 0;
 	int pos_bit = 1;
@@ -150,6 +151,8 @@ int hamming_repair(uint8_t *chunk, hamming_ecc_t syndrome)
 	}
 
 	/* Flip the bit back */
-	chunk[pos >> 3] ^= 1 << (pos & 7);
+	if ((pos >> 3) < len)
+		chunk[pos >> 3] ^= 1 << (pos & 7);
+
 	return 0;
 }
