@@ -62,6 +62,22 @@ static hamming_ecc_t parity_scan(const uint8_t *chunk, size_t len)
 	hamming_ecc_t out = 0;
 	int i;
 
+	/* Let the bits in chunk be partitioned into the following
+	 * subsets:
+	 *
+	 *    P0 : bits  0,  2,  4,  6,  8, 10, 12, 14...
+	 *    P0': bits  1,  3,  5,  7,  9, 11, 13, 15...
+	 *    P1 : bits  0,  1,  4,  5,  8,  9, 12, 13...
+	 *    P1': bits  2,  3,  6,  7, 10, 11, 14, 15...
+	 *    P2 : bits  0,  1,  2,  3,  8,  9, 10, 11...
+	 *    P2': bits  4,  5,  6,  7, 12, 13, 14, 15...
+         *    P3 : bits  0,  1,  2,  3,  4,  5,  6,  7...
+	 *    P3': bits  8,  9, 10, 11, 12, 13, 14, 15...
+	 *
+	 * That is, given a bit position i, and a pair of sets (Pm,
+	 * Pm'), then i belongs to Pm if bit m in i is clear. Otherwise,
+	 * it belongs to Pm'.
+	 */
 	for (i = 0; i < len; i++) {
 		const uint8_t c = chunk[i];
 
@@ -73,6 +89,21 @@ static hamming_ecc_t parity_scan(const uint8_t *chunk, size_t len)
 		}
 	}
 
+	/* The output checksum is the parity of the sets, in the
+	 * following order:
+	 *
+	 *     ...P3', P3, P2', P2, P1', P1, P0', P0
+	 *
+	 * This is a linear code: the parity of the difference of two
+	 * blocks is equal to the difference of their parities.
+	 *
+	 * If the bit at position i is flipped, then it flips the parity
+	 * of exactly one of each pair of sets (position i belongs to
+	 * one of each pair of sets).
+	 *
+	 * By observing which of each pair has changed parity, we can
+	 * determine each bit of i.
+	 */
 	for (i = 0; i < HAMMING_LOG2_CHUNK_SIZE; i++) {
 		out <<= 1;
 		out |= (line_bar >> 8) & 1;
