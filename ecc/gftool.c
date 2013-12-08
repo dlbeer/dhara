@@ -339,36 +339,6 @@ static int bch_generator(gf_elem_t n, poly_t *out)
 	return 0;
 }
 
-static void erase_mask(int block_size, uint8_t fill, poly_t p)
-{
-	const int num_bytes = (degree(p) + 7) >> 3;
-	poly_t remainder = 0;
-	int i;
-
-	for (i = 0; i < block_size; i++) {
-		int j;
-
-		remainder ^= fill;
-
-		for (j = 0; j < 8; j++) {
-			if (remainder & 1)
-				remainder ^= p;
-			remainder >>= 1;
-		}
-	}
-
-	printf("Erase mask: %d bytes of %02x:\n", block_size, fill);
-	printf("    remainder: %lx\n", remainder);
-	printf("    mask bytes:");
-
-	for (i = 0; i < num_bytes; i++) {
-		printf(" %02x", (uint8_t)(fill ^ remainder));
-		remainder >>= 8;
-	}
-
-	printf("\n");
-}
-
 /************************************************************************
  * User interface
  */
@@ -448,8 +418,6 @@ int main(int argc, char **argv)
 
 		if (bch_generator(atoi(argv[3]), &gen) < 0)
 			r = -1;
-		else
-			erase_mask(512, 0xff, reciprocal(gen));
 	} else {
 		fprintf(stderr, "unknown operation: %s\n", argv[2]);
 		r = -1;

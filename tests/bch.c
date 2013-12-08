@@ -20,6 +20,7 @@
 #include <assert.h>
 #include "ecc/bch.h"
 
+#define BCH_CHUNK_SIZE		512
 #define TEST_CHUNK_SIZE		(BCH_CHUNK_SIZE + 8)
 
 static void flip_one_bit(uint8_t *b, int size)
@@ -39,12 +40,12 @@ static void flip_test(const struct bch_def *def,
 
 	memcpy(bad, good, sizeof(bad));
 
-	for (i = 0; i < def->syns / 2; i++)
+	for (i = 0; i < def->syns; i += 2)
 		flip_one_bit(bad, TEST_CHUNK_SIZE);
 
-	if (bch_verify(def, bad, bad + BCH_CHUNK_SIZE) < 0) {
-		bch_repair(def, bad, bad + BCH_CHUNK_SIZE);
-		i = bch_verify(def, bad, bad + BCH_CHUNK_SIZE);
+	if (bch_verify(def, bad, BCH_CHUNK_SIZE, bad + BCH_CHUNK_SIZE) < 0) {
+		bch_repair(def, bad, BCH_CHUNK_SIZE, bad + BCH_CHUNK_SIZE);
+		i = bch_verify(def, bad, BCH_CHUNK_SIZE, bad + BCH_CHUNK_SIZE);
 		assert(!i);
 	}
 
@@ -57,7 +58,7 @@ static void test_properties(const struct bch_def *def,
 {
 	int i;
 
-	i = bch_verify(def, block, block + BCH_CHUNK_SIZE);
+	i = bch_verify(def, block, BCH_CHUNK_SIZE, block + BCH_CHUNK_SIZE);
 	assert(!i);
 
 	for (i = 0; i < 20; i++)
@@ -72,7 +73,7 @@ static void test_random_block(const struct bch_def *def)
 	for (i = 0; i < BCH_CHUNK_SIZE; i++)
 		block[i] = random();
 
-	bch_generate(def, block, block + BCH_CHUNK_SIZE);
+	bch_generate(def, block, BCH_CHUNK_SIZE, block + BCH_CHUNK_SIZE);
 	test_properties(def, block);
 }
 

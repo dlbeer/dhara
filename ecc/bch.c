@@ -19,50 +19,45 @@
 #include "gf13.h"
 
 #define BCH_MAX_SYNS		8
-#define BCH_CHUNK_BITS		(BCH_CHUNK_SIZE * 8)
 
 const struct bch_def bch_1bit = {
 	.syns		= 2,
 	.generator	= 0x201b,
 	.degree		= 13,
-	.ecc_bytes	= 2,
-	.ecc_mask	= {0x61, 0xe6}
+	.ecc_bytes	= 2
 };
 
 const struct bch_def bch_2bit = {
 	.syns		= 4,
 	.generator	= 0x4d5154b,
 	.degree		= 26,
-	.ecc_bytes	= 4,
-	.ecc_mask	= {0xba, 0xb3, 0xd6, 0xfc}
+	.ecc_bytes	= 4
 };
 
 const struct bch_def bch_3bit = {
 	.syns		= 6,
 	.generator	= 0xbaf5b2bded,
 	.degree		= 39,
-	.ecc_bytes	= 5,
-	.ecc_mask	= {0xb5, 0xd6, 0xf0, 0xb9, 0x9f}
+	.ecc_bytes	= 5
 };
 
 const struct bch_def bch_4bit = {
 	.syns		= 8,
 	.generator	= 0x14523043ab86ab,
 	.degree		= 52,
-	.ecc_bytes	= 7,
-	.ecc_mask	= {0xcd, 0xd8, 0x2b, 0x0a, 0x66, 0x20, 0xfb}
+	.ecc_bytes	= 7
 };
 
 static bch_poly_t chunk_remainder(const struct bch_def *def,
-				  const uint8_t *chunk)
+				  const uint8_t *chunk, size_t len)
 {
 	bch_poly_t remainder = 0;
 	int i;
 
-	for (i = 0; i < BCH_CHUNK_SIZE; i++) {
+	for (i = 0; i < len; i++) {
 		int j;
 
-		remainder ^= chunk[i];
+		remainder ^= chunk[i] ^ 0xff;
 
 		for (j = 0; j < 8; j++) {
 			if (remainder & 1)
@@ -74,26 +69,24 @@ static bch_poly_t chunk_remainder(const struct bch_def *def,
 	return remainder;
 }
 
-static void pack_poly(const struct bch_def *def,
-		      bch_poly_t poly, uint8_t *ecc)
+static void pack_poly(const struct bch_def *def, bch_poly_t poly, uint8_t *ecc)
 {
 	int i;
 
 	for (i = 0; i < def->ecc_bytes; i++) {
-		ecc[i] = def->ecc_mask[i] ^ poly;
+		ecc[i] = ~poly;
 		poly >>= 8;
 	}
 }
 
-static bch_poly_t unpack_poly(const struct bch_def *def,
-			      const uint8_t *ecc)
+static bch_poly_t unpack_poly(const struct bch_def *def, const uint8_t *ecc)
 {
 	bch_poly_t poly = 0;
 	int i;
 
 	for (i = def->ecc_bytes - 1; i >= 0; i--) {
 		poly <<= 8;
-		poly |= def->ecc_mask[i] ^ ecc[i];
+		poly |= ecc[i] ^ 0xff;
 	}
 
 	poly &= ((1LL << def->degree) - 1);
@@ -101,15 +94,15 @@ static bch_poly_t unpack_poly(const struct bch_def *def,
 }
 
 void bch_generate(const struct bch_def *bch,
-		  const uint8_t *chunk, uint8_t *ecc)
+		  const uint8_t *chunk, size_t len, uint8_t *ecc)
 {
-	pack_poly(bch, chunk_remainder(bch, chunk), ecc);
+	pack_poly(bch, chunk_remainder(bch, chunk, len), ecc);
 }
 
 int bch_verify(const struct bch_def *bch,
-	       const uint8_t *chunk, const uint8_t *ecc)
+	       const uint8_t *chunk, size_t len, const uint8_t *ecc)
 {
-	return (chunk_remainder(bch, chunk) == unpack_poly(bch, ecc)) ?
+	return (chunk_remainder(bch, chunk, len) == unpack_poly(bch, ecc)) ?
 		0 : -1;
 }
 
@@ -166,6 +159,7 @@ static gf13_elem_t poly_eval(const gf13_elem_t *s, gf13_elem_t log_x)
 
 static gf13_elem_t syndrome(const struct bch_def *bch,
 			    const uint8_t *chunk,
+			    size_t len,
 			    bch_poly_t remainder,
 			    gf13_elem_t log_x)
 {
@@ -173,8 +167,8 @@ static gf13_elem_t syndrome(const struct bch_def *bch,
 	gf13_elem_t log_t = 0;
 	int i;
 
-	for (i = 0; i < BCH_CHUNK_SIZE; i++) {
-		uint8_t c = chunk[i];
+	for (i = 0; i < len; i++) {
+		uint8_t c = chunk[i] ^ 0xff;
 		int j;
 
 		for (j = 0; j < 8; j++) {
@@ -249,16 +243,17 @@ static void berlekamp_massey(const gf13_elem_t *s, int N,
 }
 
 void bch_repair(const struct bch_def *bch,
-		uint8_t *chunk, uint8_t *ecc)
+		uint8_t *chunk, size_t len, uint8_t *ecc)
 {
 	const bch_poly_t remainder = unpack_poly(bch, ecc);
+	const int chunk_bits = len << 3;
 	gf13_elem_t syns[BCH_MAX_SYNS];
 	gf13_elem_t sigma[MAX_POLY];
 	int i;
 
 	/* Compute syndrome vector */
 	for (i = 0; i < bch->syns; i++)
-		syns[i] = syndrome(bch, chunk, remainder, i + 1);
+		syns[i] = syndrome(bch, chunk, len, remainder, i + 1);
 
 	/* Compute sigma */
 	berlekamp_massey(syns, bch->syns, sigma);
@@ -266,12 +261,12 @@ void bch_repair(const struct bch_def *bch,
 	/* Each root of sigma corresponds to an error location. Correct
 	 * errors in the chunk data first.
 	 */
-	for (i = 0; i < BCH_CHUNK_BITS; i++)
+	for (i = 0; i < chunk_bits; i++)
 		if (!poly_eval(sigma, GF13_ORDER - i))
 			chunk[i >> 3] ^= 1 << (i & 7);
 
 	/* Then correct errors in the ECC data */
 	for (i = 0; i < bch->degree; i++)
-		if (!poly_eval(sigma, GF13_ORDER - BCH_CHUNK_BITS - i))
+		if (!poly_eval(sigma, GF13_ORDER - chunk_bits - i))
 			ecc[i >> 3] ^= 1 << (i & 7);
 }
