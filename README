@@ -96,5 +96,6 @@ in addition to ECC. If this is done, ensure that the checksum bytes are
 also protected by ECC!
 
 Implementations of two popular ECC mechanisms (Hamming and BCH) can be
-found in the ecc/ subdirectory. Each implements ECC over a fixed-size
-chunk (512 bytes). Multiple ECC chunks may be required per page.
+found in the ecc/ subdirectory. Each implements ECC over variable-sized
+chunks (256 or 512 bytes are typical sizes). Multiple ECC chunks may be
+required per page.
