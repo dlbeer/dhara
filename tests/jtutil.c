@@ -156,7 +156,7 @@ int jt_enqueue_sequence(struct dhara_journal *j, int start, int count)
 		assert(dhara_journal_size(j) >= i);
 		root = dhara_journal_root(j);
 
-		if (dhara_journal_read_meta(j, j->root, meta, &err) < 0)
+		if (dhara_journal_read_meta(j, root, meta, &err) < 0)
 			dabort("read_meta", err);
 		assert(dhara_r32(meta) == start + i);
 	}
