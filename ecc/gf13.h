@@ -24,6 +24,33 @@
 
 typedef uint16_t	gf13_elem_t;
 
+/* If you need to reduce the code size, you can define GF13_NO_TABLES.
+ *
+ * This results in much smaller (but also much slower) code.
+ */
+
+#ifdef GF13_NO_TABLES
+
+gf13_elem_t gf13_mul(gf13_elem_t a, gf13_elem_t b);
+gf13_elem_t gf13_div(gf13_elem_t a, gf13_elem_t b);
+
+static inline gf13_elem_t gf13_divx(gf13_elem_t a)
+{
+	return gf13_mul(a, 0x100d);
+}
+
+static inline gf13_elem_t gf13_mulx(gf13_elem_t a)
+{
+	gf13_elem_t r = a << 1;
+
+	if (r & 8192)
+		r ^= 0x201b;
+
+	return r;
+}
+
+#else
+
 extern const gf13_elem_t gf13_exp[8192];
 extern const gf13_elem_t gf13_log[8192];
 
@@ -52,5 +79,7 @@ static inline gf13_elem_t gf13_mulx(gf13_elem_t a)
 {
 	return gf13_exp[gf13_wrap(gf13_log[a] + 1)];
 }
+
+#endif
 
 #endif

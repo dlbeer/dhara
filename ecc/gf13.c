@@ -16,6 +16,41 @@
 
 #include "gf13.h"
 
+#ifdef GF13_NO_TABLES
+
+gf13_elem_t gf13_mul(gf13_elem_t a, gf13_elem_t b)
+{
+	unsigned int i;
+	gf13_elem_t r = 0;
+
+	for (i = 0; i < 13; i++) {
+		r = gf13_mulx(r);
+
+		if (b & 4096)
+			r ^= a;
+
+		b <<= 1;
+	}
+
+	return r;
+}
+
+gf13_elem_t gf13_div(gf13_elem_t a, gf13_elem_t b)
+{
+	unsigned int i;
+	gf13_elem_t r = 1;
+
+	for (i = 0; i < 12; i++) {
+		r = gf13_mul(r, r);
+		r = gf13_mul(r, b);
+	}
+
+	r = gf13_mul(r, r);
+	return gf13_mul(a, r);
+}
+
+#else
+
 /* 0x201b [0x3601] -> x^13 + x^4 + x^3 + x + 1 */
 
 const gf13_elem_t gf13_log[8192] = {
@@ -2071,3 +2106,5 @@ const gf13_elem_t gf13_exp[8192] = {
 	0x147f, 0x08e5, 0x11ca, 0x038f, 0x071e, 0x0e3c, 0x1c78, 0x18eb,
 	0x11cd, 0x0381, 0x0702, 0x0e04, 0x1c08, 0x180b, 0x100d, 0x0001,
 };
+
+#endif
