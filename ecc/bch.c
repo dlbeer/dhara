@@ -112,13 +112,8 @@ int bch_verify(const struct bch_def *bch,
 
 #define MAX_POLY	(BCH_MAX_SYNS * 2)
 
-static inline gf13_elem_t mod_s(gf13_elem_t e)
-{
-	return (e >= GF13_ORDER) ? (e - GF13_ORDER) : e;
-}
-
 static void poly_add(gf13_elem_t *dst, const gf13_elem_t *src,
-		     gf13_elem_t log_c, int shift)
+		     gf13_elem_t c, int shift)
 {
 	int i;
 
@@ -131,23 +126,23 @@ static void poly_add(gf13_elem_t *dst, const gf13_elem_t *src,
 		if (!v)
 			continue;
 
-		dst[p] ^= gf13_exp[mod_s(gf13_log[v] + log_c)];
+		dst[p] ^= gf13_mul(v, c);
 	}
 }
 
-static gf13_elem_t poly_eval(const gf13_elem_t *s, gf13_elem_t log_x)
+static gf13_elem_t poly_eval(const gf13_elem_t *s, gf13_elem_t x)
 {
 	int i;
 	gf13_elem_t sum = 0;
-	gf13_elem_t log_t = 1;
+	gf13_elem_t t = x;
 
 	for (i = 0; i < MAX_POLY; i++) {
 		const gf13_elem_t c = s[i];
 
 		if (c)
-			sum ^= gf13_exp[mod_s(gf13_log[c] + log_t)];
+			sum ^= gf13_mul(c, t);
 
-		log_t = mod_s(log_t + log_x);
+		t = gf13_mul(t, x);
 	}
 
 	return sum;
@@ -161,10 +156,10 @@ static gf13_elem_t syndrome(const struct bch_def *bch,
 			    const uint8_t *chunk,
 			    size_t len,
 			    bch_poly_t remainder,
-			    gf13_elem_t log_x)
+			    gf13_elem_t x)
 {
 	gf13_elem_t y = 0;
-	gf13_elem_t log_t = 0;
+	gf13_elem_t t = 1;
 	int i;
 
 	for (i = 0; i < len; i++) {
@@ -173,19 +168,19 @@ static gf13_elem_t syndrome(const struct bch_def *bch,
 
 		for (j = 0; j < 8; j++) {
 			if (c & 1)
-				y ^= gf13_exp[log_t];
+				y ^= t;
 
 			c >>= 1;
-			log_t = mod_s(log_t + log_x);
+			t = gf13_mul(t, x);
 		}
 	}
 
 	for (i = 0; i < bch->degree; i++) {
 		if (remainder & 1)
-			y ^= gf13_exp[log_t];
+			y ^= t;
 
 		remainder >>= 1;
-		log_t = mod_s(log_t + log_x);
+		t = gf13_mul(t, x);
 	}
 
 	return y;
@@ -209,18 +204,17 @@ static void berlekamp_massey(const gf13_elem_t *s, int N,
 
 	for (n = 0; n < N; n++) {
 		gf13_elem_t d = s[n];
-		gf13_elem_t log_mult;
+		gf13_elem_t mult;
 		int i;
 
 		for (i = 1; i <= L; i++) {
 			if (!(C[i] && s[n - i]))
 				continue;
 
-			d ^= gf13_exp[mod_s(gf13_log[C[i]] +
-					    gf13_log[s[n - i]])];
+			d ^= gf13_mul(C[i], s[n - i]);
 		}
 
-		log_mult = mod_s(GF13_ORDER - gf13_log[b] + gf13_log[d]);
+		mult = gf13_div(d, b);
 
 		if (!d) {
 			m++;
@@ -228,13 +222,13 @@ static void berlekamp_massey(const gf13_elem_t *s, int N,
 			gf13_elem_t T[MAX_POLY];
 
 			memcpy(T, C, sizeof(T));
-			poly_add(C, B, log_mult, m);
+			poly_add(C, B, mult, m);
 			memcpy(B, T, sizeof(B));
 			L = n + 1 - L;
 			b = d;
 			m = 1;
 		} else {
-			poly_add(C, B, log_mult, m);
+			poly_add(C, B, mult, m);
 			m++;
 		}
 	}
@@ -249,11 +243,15 @@ void bch_repair(const struct bch_def *bch,
 	const int chunk_bits = len << 3;
 	gf13_elem_t syns[BCH_MAX_SYNS];
 	gf13_elem_t sigma[MAX_POLY];
+	gf13_elem_t x;
 	int i;
 
 	/* Compute syndrome vector */
-	for (i = 0; i < bch->syns; i++)
-		syns[i] = syndrome(bch, chunk, len, remainder, i + 1);
+	x = 2;
+	for (i = 0; i < bch->syns; i++) {
+		syns[i] = syndrome(bch, chunk, len, remainder, x);
+		x = gf13_mulx(x);
+	}
 
 	/* Compute sigma */
 	berlekamp_massey(syns, bch->syns, sigma);
@@ -261,12 +259,17 @@ void bch_repair(const struct bch_def *bch,
 	/* Each root of sigma corresponds to an error location. Correct
 	 * errors in the chunk data first.
 	 */
-	for (i = 0; i < chunk_bits; i++)
-		if (!poly_eval(sigma, GF13_ORDER - i))
+	x = 1;
+	for (i = 0; i < chunk_bits; i++) {
+		if (!poly_eval(sigma, x))
 			chunk[i >> 3] ^= 1 << (i & 7);
+		x = gf13_divx(x);
+	}
 
 	/* Then correct errors in the ECC data */
-	for (i = 0; i < bch->degree; i++)
-		if (!poly_eval(sigma, GF13_ORDER - chunk_bits - i))
+	for (i = 0; i < bch->degree; i++) {
+		if (!poly_eval(sigma, x))
 			ecc[i >> 3] ^= 1 << (i & 7);
+		x = gf13_divx(x);
+	}
 }

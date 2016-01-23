@@ -27,4 +27,30 @@ typedef uint16_t	gf13_elem_t;
 extern const gf13_elem_t gf13_exp[8192];
 extern const gf13_elem_t gf13_log[8192];
 
+/* Wrappers for field arithmetic */
+static inline gf13_elem_t gf13_wrap(gf13_elem_t s)
+{
+	return (s >= GF13_ORDER) ? (s - GF13_ORDER) : s;
+}
+
+static inline gf13_elem_t gf13_mul(gf13_elem_t a, gf13_elem_t b)
+{
+	return gf13_exp[gf13_wrap(gf13_log[a] + gf13_log[b])];
+}
+
+static inline gf13_elem_t gf13_div(gf13_elem_t a, gf13_elem_t b)
+{
+	return gf13_exp[gf13_wrap(gf13_log[a] + GF13_ORDER - gf13_log[b])];
+}
+
+static inline gf13_elem_t gf13_divx(gf13_elem_t a)
+{
+	return gf13_exp[gf13_wrap(gf13_log[a] + GF13_ORDER - 1)];
+}
+
+static inline gf13_elem_t gf13_mulx(gf13_elem_t a)
+{
+	return gf13_exp[gf13_wrap(gf13_log[a] + 1)];
+}
+
 #endif
