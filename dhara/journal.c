@@ -272,6 +272,35 @@ static dhara_block_t find_last_checkblock(struct dhara_journal *j,
 	return first;
 }
 
+/* Test whether a checkpoint group is in a state fit for reprogramming,
+ * but allow for the fact that is_free() might not have any way of
+ * distinguishing between an unprogrammed page, and a page programmed
+ * with all-0xff bytes (but if so, it must be ok to reprogram such a
+ * page).
+ *
+ * We used to test for an unprogrammed checkpoint group by checking to
+ * see if the first user-page had been programmed since last erase (by
+ * testing only the first page with is_free). This works if is_free is
+ * precise, because the pages are written in order.
+ *
+ * If is_free is imprecise, we need to check all pages in the group.
+ * That also works, because the final page in a checkpoint group is
+ * guaranteed to contain non-0xff bytes. Therefore, we return 1 only if
+ * the group is truly unprogrammed, or if it was partially programmed
+ * with some all-0xff user pages (which changes nothing for us).
+ */
+static int cp_free(struct dhara_journal *j, dhara_page_t first_user)
+{
+	const int count = 1 << j->log2_ppc;
+	int i;
+
+	for (i = 0; i < count; i++)
+		if (!dhara_nand_is_free(j->nand, first_user + i))
+			return 0;
+
+	return 1;
+}
+
 static dhara_page_t find_last_group(struct dhara_journal *j,
 				    dhara_block_t blk)
 {
@@ -279,24 +308,21 @@ static dhara_page_t find_last_group(struct dhara_journal *j,
 	int low = 0;
 	int high = num_groups - 1;
 
-	/* If any of the pages in a checkpoint group are programmed, the
-	 * first user-page will be. If a checkpoint group is completely
-	 * unprogrammed, everything following it will be completely
-	 * unprogrammed also.
+	/* If a checkpoint group is completely unprogrammed, everything
+	 * following it will be completely unprogrammed also.
 	 *
 	 * Therefore, binary search checkpoint groups until we find the
-	 * last one with a programmed first user-page.
+	 * last programmed one.
 	 */
 	while (low <= high) {
 		int mid = (low + high) >> 1;
 		const dhara_page_t p = (mid << j->log2_ppc) |
 				 (blk << j->nand->log2_ppb);
 
-		if (dhara_nand_is_free(j->nand, p)) {
+		if (cp_free(j, p)) {
 			high = mid - 1;
 		} else if (((mid + 1) >= num_groups) ||
-			   dhara_nand_is_free(j->nand,
-				p + (1 << j->log2_ppc))) {
+			   cp_free(j, p + (1 << j->log2_ppc))) {
 			return p;
 		} else {
 			low = mid + 1;
@@ -343,7 +369,7 @@ static int find_head(struct dhara_journal *j, dhara_page_t start,
 		/* If we hit the end of the block, we're done */
 		if (is_aligned(j->head, j->nand->log2_ppb))
 			break;
-	} while (!dhara_nand_is_free(j->nand, j->head));
+	} while (!cp_free(j, j->head));
 
 	/* Make sure we don't chase over the tail */
 	if (align_eq(j->head, j->tail, j->nand->log2_ppb))

@@ -1,7 +1,7 @@
 	   Dhara: NAND flash translation layer for small MCUs
 
 		     Daniel Beer <dlbeer@gmail.com>
-			       8 Dec 2013
+			       1 Apr 2017
 
 Dhara is a small flash translation layer designed to be used in
 resource-constrained systems for managing NAND flash. It provides a
@@ -82,6 +82,10 @@ Check the datasheet for your chip for information on these operations.
 In most cases, the manufacturer will specify a preferred layout scheme
 for the ECC and bad block markers in the OOB region. Pay particular
 attention to the marker used for factory-marked bad blocks!
+
+If your ECC scheme is such that programming an all-0xff page is
+equivalent to a no-op, then it's ok for your implementation of is_free()
+to simply check for all-0xff page content.
 
 Note that bad blocks need only be queried one at a time. It's not
 necessary to maintain a bad-block table -- just the standard OOB marking
