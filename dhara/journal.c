@@ -196,6 +196,13 @@ static void reset_journal(struct dhara_journal *j)
 	memset(j->page_buf, 0xff, 1 << j->nand->log2_page_size);
 }
 
+static void roll_stats(struct dhara_journal *j)
+{
+	j->bb_last = j->bb_current;
+	j->bb_current = 0;
+	j->epoch++;
+}
+
 void dhara_journal_init(struct dhara_journal *j,
 			const struct dhara_nand *n,
 			uint8_t *page_buf)
@@ -362,9 +369,19 @@ static int find_head(struct dhara_journal *j, dhara_page_t start,
 {
 	j->head = start;
 
+	/* Starting from the last good checkpoint, find either:
+	 *
+	 *   (a) the next free user-page in the same block
+	 *   (b) or, the first page of the next block
+	 *
+	 * The block we end up on might be bad, but that's ok -- we'll
+	 * skip it when we go to prepare the next write.
+	 */
 	do {
 		/* Skip to the next userpage */
 		j->head = next_upage(j, j->head);
+		if (!j->head)
+			roll_stats(j);
 
 		/* If we hit the end of the block, we're done */
 		if (is_aligned(j->head, j->nand->log2_ppb))
@@ -544,13 +561,6 @@ void dhara_journal_clear(struct dhara_journal *j)
 	hdr_clear_user(j->page_buf, j->nand->log2_page_size);
 }
 
-static void roll_stats(struct dhara_journal *j)
-{
-	j->bb_last = j->bb_current;
-	j->bb_current = 0;
-	j->epoch++;
-}
-
 static int skip_block(struct dhara_journal *j, dhara_error_t *err)
 {
 	const dhara_block_t next = next_block(j->nand,
@@ -643,6 +653,8 @@ static int dump_meta(struct dhara_journal *j, dhara_error_t *err)
 				      j->page_buf, &my_err))) {
 			j->recover_meta = j->head;
 			j->head = next_upage(j, j->head);
+			if (!j->head)
+				roll_stats(j);
 			hdr_clear_user(j->page_buf, j->nand->log2_page_size);
 			return 0;
 		}
