@@ -384,14 +384,15 @@ static int find_head(struct dhara_journal *j, dhara_page_t start,
 			roll_stats(j);
 
 		/* If we hit the end of the block, we're done */
-		if (is_aligned(j->head, j->nand->log2_ppb))
+		if (is_aligned(j->head, j->nand->log2_ppb)) {
+			/* Make sure we don't chase over the tail */
+			if (align_eq(j->head, j->tail, j->nand->log2_ppb))
+				j->tail = next_block(j->nand,
+					j->tail >> j->nand->log2_ppb) <<
+						j->nand->log2_ppb;
 			break;
+		}
 	} while (!cp_free(j, j->head));
-
-	/* Make sure we don't chase over the tail */
-	if (align_eq(j->head, j->tail, j->nand->log2_ppb))
-		j->tail = next_block(j->nand,
-			j->tail >> j->nand->log2_ppb) << j->nand->log2_ppb;
 
 	return 0;
 }

@@ -94,7 +94,7 @@ struct dhara_journal {
 	dhara_block_t			bb_last;
 
 	/* Log head and tail. The tail pointer points to the last user
-	 * page in the log, and the head point points to the next free
+	 * page in the log, and the head pointer points to the next free
 	 * raw page. The root points to the last written user page.
 	 */
 	dhara_page_t			tail_sync;
