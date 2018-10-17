@@ -352,6 +352,7 @@ static int find_root(struct dhara_journal *j, dhara_page_t start,
 		if (!dhara_nand_read(j->nand, p,
 				     0, 1 << j->nand->log2_page_size,
 				     j->page_buf, err) &&
+		    (hdr_has_magic(j->page_buf)) &&
 		    (hdr_get_epoch(j->page_buf) == j->epoch)) {
 			j->root = p - 1;
 			return 0;
