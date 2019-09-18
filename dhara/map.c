@@ -255,13 +255,14 @@ static int pad_queue(struct dhara_map *m, dhara_error_t *err)
 	dhara_page_t p = dhara_journal_root(&m->journal);
 	uint8_t root_meta[DHARA_META_SIZE];
 
+	ck_set_count(dhara_journal_cookie(&m->journal), m->count);
+
 	if (p == DHARA_PAGE_NONE)
 		return dhara_journal_enqueue(&m->journal, NULL, NULL, err);
 
 	if (dhara_journal_read_meta(&m->journal, p, root_meta, err) < 0)
 		return -1;
 
-	ck_set_count(dhara_journal_cookie(&m->journal), m->count);
 	return dhara_journal_copy(&m->journal, p, root_meta, err);
 }
 
