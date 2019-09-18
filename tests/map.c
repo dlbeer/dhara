@@ -153,6 +153,8 @@ int main(void)
 	struct dhara_map map;
 	int i;
 
+	printf("%d\n", (int)sizeof(map));
+
 	sim_reset();
 	sim_inject_bad(10);
 	sim_inject_timebombs(30, 20);
