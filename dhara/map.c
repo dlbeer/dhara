@@ -325,7 +325,7 @@ static int prepare_write(struct dhara_map *m, dhara_sector_t dst,
 	dhara_error_t my_err;
 
 	if (auto_gc(m, err) < 0)
-		return 0;
+		return -1;
 
 	if (trace_path(m, dst, NULL, meta, &my_err) < 0) {
 		if (my_err != DHARA_E_NOT_FOUND) {
