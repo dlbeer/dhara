@@ -146,7 +146,7 @@ static void mt_assert_blank(struct dhara_map *m, dhara_sector_t s)
 	assert(err == DHARA_E_NOT_FOUND);
 }
 
-int main(void)
+static void test(void)
 {
 	const size_t page_size = 1 << sim_nand.log2_page_size;
 	uint8_t page_buf[page_size];
@@ -229,6 +229,18 @@ int main(void)
 	}
 
 	printf("\n");
+}
+
+int main(void)
+{
+	for (int i = 0; i < 1000; i++) {
+		printf("--------------------------------"
+		       "--------------------------------\n");
+		printf("Seed: %d\n", i);
+		srandom(i);
+		test();
+	}
+
 	sim_dump();
 	return 0;
 }

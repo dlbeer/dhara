@@ -494,7 +494,8 @@ int dhara_map_sync(struct dhara_map *m, dhara_error_t *err)
 			ret = pad_queue(m, &my_err);
 		} else {
 			ret = raw_gc(m, p, &my_err);
-			dhara_journal_dequeue(&m->journal);
+			if (!ret)
+				dhara_journal_dequeue(&m->journal);
 		}
 
 		if ((ret < 0) && (try_recover(m, my_err, err) < 0))
