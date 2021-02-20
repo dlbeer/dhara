@@ -53,14 +53,12 @@ void jt_check(struct dhara_journal *j)
 	/* The root always points to a valid user page in a non-empty
 	 * journal.
 	 */
-	if (j->head != j->tail) {
+	if (j->root != DHARA_PAGE_NONE) {
 		const dhara_page_t raw_size = j->head - j->tail;
 		const dhara_page_t root_offset = j->root - j->tail;
 
 		check_upage(j, j->root);
 		assert(root_offset < raw_size);
-	} else {
-		assert(j->root == DHARA_PAGE_NONE);
 	}
 }
 
@@ -203,6 +201,10 @@ void jt_dequeue_sequence(struct dhara_journal *j, int next, int count)
 
 			seq_assert(id, r, page_size);
 		}
+
+		if (count == 1)
+			printf("head=%d, tail=%d, root=%d\n",
+				j->head, j->tail, j->root);
 	}
 
 	jt_check(j);

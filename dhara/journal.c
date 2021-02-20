@@ -537,6 +537,11 @@ dhara_page_t dhara_journal_peek(struct dhara_journal *j)
 	return j->tail;
 }
 
+static dhara_page_t wrap(dhara_page_t a, dhara_page_t b)
+{
+	return a >= b ? (a - b) : a;
+}
+
 void dhara_journal_dequeue(struct dhara_journal *j)
 {
 	if (j->head == j->tail)
@@ -550,7 +555,13 @@ void dhara_journal_dequeue(struct dhara_journal *j)
 	if (!(j->flags & (DHARA_JOURNAL_F_DIRTY | DHARA_JOURNAL_F_RECOVERY)))
 		j->tail_sync = j->tail;
 
-	if (j->head == j->tail)
+	const dhara_page_t chip_size = j->nand->num_blocks << j->nand->log2_ppb;
+	const dhara_page_t raw_size = wrap(j->head + chip_size - j->tail,
+		chip_size);
+	const dhara_page_t root_offset = wrap(j->head + chip_size - j->root,
+		chip_size);
+
+	if (root_offset > raw_size)
 		j->root = DHARA_PAGE_NONE;
 }
 

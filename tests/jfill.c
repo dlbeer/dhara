@@ -24,7 +24,7 @@
 #include "util.h"
 #include "jtutil.h"
 
-int main(void)
+static void test(void)
 {
 	struct dhara_journal journal;
 	const size_t page_size = 1 << sim_nand.log2_page_size;
@@ -59,6 +59,17 @@ int main(void)
 	}
 
 	printf("\n");
-	sim_dump();
+}
+
+int main(void)
+{
+	for (int i = 0; i < 100; i++) {
+		printf("--------------------------------"
+		       "--------------------------------\n");
+		printf("Seed: %d\n", i);
+		srandom(i);
+		test();
+	}
+
 	return 0;
 }
