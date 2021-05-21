@@ -368,7 +368,9 @@ static int find_root(struct dhara_journal *j, dhara_page_t start,
 static int find_head(struct dhara_journal *j, dhara_page_t start,
 		     dhara_error_t *err)
 {
-	j->head = start;
+	j->head = next_upage(j, start);
+	if (!j->head)
+		roll_stats(j);
 
 	/* Starting from the last good checkpoint, find either:
 	 *
@@ -378,11 +380,30 @@ static int find_head(struct dhara_journal *j, dhara_page_t start,
 	 * The block we end up on might be bad, but that's ok -- we'll
 	 * skip it when we go to prepare the next write.
 	 */
-	do {
-		/* Skip to the next userpage */
-		j->head = next_upage(j, j->head);
-		if (!j->head)
+	for (;;) {
+		/* How many free pages trail this checkpoint group? */
+		const unsigned int ppc = 1 << j->log2_ppc;
+		unsigned int n = 0;
+		dhara_page_t first = j->head & ~(dhara_page_t)(ppc - 1);
+
+		while (n < ppc &&
+			dhara_nand_is_free(j->nand, first + ppc - n - 1))
+			n++;
+
+		/* If we have some, then we've found our next free
+		 * userpage.
+		 */
+		if (n > 1) {
+			j->head = first + ppc - n;
+			break;
+		}
+
+		/* Skip to the next checkpoint group */
+		j->head = first + ppc;
+		if (j->head >= (j->nand->num_blocks << j->nand->log2_ppb)) {
+			j->head = 0;
 			roll_stats(j);
+		}
 
 		/* If we hit the end of the block, we're done */
 		if (is_aligned(j->head, j->nand->log2_ppb)) {
@@ -393,7 +414,7 @@ static int find_head(struct dhara_journal *j, dhara_page_t start,
 						j->nand->log2_ppb;
 			break;
 		}
-	} while (!cp_free(j, j->head));
+	}
 
 	return 0;
 }
