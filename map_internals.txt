@@ -415,3 +415,82 @@ Having done this, we've performed an action equivalent to repacking,
 which creates one page, but also removed one logical page from the map.
 Of course, there is one case that must be handled specially: deletion of
 the tree root.
+
+Memory layout
+=============
+
+This is a memory layout example with the following configuration:
+
+  * log2_ppc = 2, ie check point group contains 4 pages
+  * log2_ppb = 4, ie 16 pages per erase block
+
+  A single erase block layout, each slot represents a physical flash page:
+
+    +------+------+------+------+
+    | data | data | data |  cp  |
+    +------+------+------+------+
+    | data | data | data |  cp  |
+    +------+------+------+------+
+    | data | data | data |  cp  |
+    +------+------+------+------+
+    | data | data | data |  cp  |
+    +------+------+------+------+
+
+  * data: User data (len = (1 << log2_page_size))
+  * cp:   Check point metadata for last 3 pages, ie (1 << log2_ppc) - 1
+
+Checkpoint
+----------
+
+Each checkpoint contains a header, a cookie and N metadata structures, one for
+each data page of the checkpoint group. The amount of metadata (the size of
+checkpoint group) depends on the dhara_journal.log2_ppc field:
+N = (1 << log2_ppb) - 1.
+
+    |- DHARA_HEADER_SIZE -|- DHARA_COOKIE_SIZE -|---- N * DHARA_META_SIZE ----|
+    +---------------------+---------------------+-----------------------------+
+    |        header       |        cookie       | meta1 : meta2 : ... : metaN |
+    +---------------------+---------------------+-----------------------------+
+
+### Checkpoint header
+
+The checkpoint header size is 16 bytes long (DHARA_HEADER_SIZE), and has the
+following layout:
+
+    +-------------------------------+
+    |  'D'  |  'h'  |  'a'  | epoch |
+    +-------------------------------+
+    |              tail             |
+    +-------------------------------+
+    |           bb_current          |
+    +-------------------------------+
+    |             bb_last           |
+    +-------------------------------+
+
+* "Dha":      Magic number to identify the header
+* epoch:      Number of times the journal passes the end and wraps around
+* tail:       Number of the last used page
+* bb_current: Number of bad blocks before the current head
+* bb_last:    Estimation of the total number of bad blocks
+
+### Checkpoint cookie
+
+The cookie field is 4 byte long (DHARA_COOKIE_SIZE), and it's used by the map
+layer for store the current number of mapped pages.
+
+### Checkpoint metadata
+
+This zone is 132 bytes long (DHARA_META_SIZE), and it's where the radix tree is
+implemented, thus, where the map between physical pages and logical sectors is
+saved. It contains the alt pointers vector, {A0, A1, A2, ..., A(31)}, and the
+logical sector number (id). There is one of this structure per physical mapped
+page.
+
+    |---------- 32 bits ------------|
+    +-------------------------------+
+    |              id               |
+    +-------------------------------+
+    |             ALT               |
+    :           POINTERS            :
+    |            32x4B              |
+    +-------------------------------+
