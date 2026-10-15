@@ -451,7 +451,6 @@ static int try_delete(struct dhara_map *m, dhara_sector_t s,
 
 	meta_set_id(meta, meta_get_id(alt_meta));
 
-	meta_set_alt(meta, level, DHARA_PAGE_NONE);
 	for (i = level + 1; i < DHARA_RADIX_DEPTH; i++)
 		meta_set_alt(meta, i, meta_get_alt(alt_meta, i));
 
