@@ -92,9 +92,6 @@ int dhara_map_copy_sector(struct dhara_map *m, dhara_sector_t src,
 /* Delete a logical sector. You don't necessarily need to do this, but
  * it's a useful hint if you no longer require the sector's data to be
  * kept.
- *
- * If order is non-zero, it specifies that all sectors in the
- * (2**order)-aligned group of s are to be deleted.
  */
 int dhara_map_trim(struct dhara_map *m, dhara_sector_t s,
 		   dhara_error_t *err);
