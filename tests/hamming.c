@@ -18,7 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-#include "ecc/hamming.h"
+#include "../ecc/hamming.h"
 
 #define HAMMING_CHUNK_SIZE	512
 #define TEST_CHUNK_SIZE		(HAMMING_CHUNK_SIZE + HAMMING_ECC_SIZE)

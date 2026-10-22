@@ -15,8 +15,8 @@
  */
 
 #include <string.h>
-#include "bytes.h"
-#include "map.h"
+#include "dhara/bytes.h"
+#include "dhara/map.h"
 
 #define DHARA_RADIX_DEPTH	(sizeof(dhara_sector_t) << 3)
 

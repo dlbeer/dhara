@@ -15,8 +15,8 @@
  */
 
 #include <string.h>
-#include "journal.h"
-#include "bytes.h"
+#include "dhara/journal.h"
+#include "dhara/bytes.h"
 
 /************************************************************************
  * Metapage binary format

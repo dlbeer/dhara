@@ -17,7 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-#include "ecc/crc32.h"
+#include "../ecc/crc32.h"
 
 #define BLOCK_SIZE	512
 

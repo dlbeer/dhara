@@ -18,7 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-#include "ecc/bch.h"
+#include "../ecc/bch.h"
 
 #define BCH_CHUNK_SIZE		512
 #define TEST_CHUNK_SIZE		(BCH_CHUNK_SIZE + 8)
