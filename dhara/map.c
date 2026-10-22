@@ -39,11 +39,6 @@ static inline dhara_sector_t ck_get_count(const uint8_t *cookie)
 	return dhara_r32(cookie);
 }
 
-static inline void meta_clear(uint8_t *meta)
-{
-	memset(meta, 0xff, DHARA_META_SIZE);
-}
-
 static inline dhara_sector_t meta_get_id(const uint8_t *meta)
 {
 	return dhara_r32(meta);

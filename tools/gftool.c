@@ -176,14 +176,6 @@ static inline gf_elem_t mod_s(gf_elem_t x)
  * Polynomial search
  */
 
-static inline void bit_clear(uint8_t *map, poly_t i)
-{
-	const uint8_t mask = 1 << (i & 7);
-	const size_t pos = i >> 3;
-
-	map[pos] &= ~mask;
-}
-
 static inline void bit_set(uint8_t *map, poly_t i)
 {
 	const uint8_t mask = 1 << (i & 7);
