@@ -1,0 +1,4 @@
+name: dhara
+build:
+  cmake-ext: True
+  kconfig-ext: True
